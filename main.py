@@ -14,7 +14,7 @@ from core.database import get_db, supabase
 app = FastAPI(title="Сборник Стихов")
 
 # Настройка статических файлов и шаблонов
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # Подключаем роутеры
