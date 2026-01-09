@@ -204,287 +204,284 @@
             </div>
             {% endif %}
 
-            <button id="close-modal-btn"
-                class="absolute top-4 right-4 text-gray-500 hover:text-gray-900 transition-colors duration-150">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
-        </div>
-    </div>
+              {% block scripts %}
+<script>
+    // ВАЖНО: Jinja2 вставляет сюда данные из Python!
+    const allData = {{ poems | tojson }};
 
-    <script>
-        // ВАЖНО: Jinja2 вставляет сюда данные из Python!
-        const allData = {{ poems | tojson }};
+    const readPoemsTitles = new Set({{ read_poems | tojson | safe }});
+    let pinnedPoemTitle = {{ pinned_title | tojson | safe }};
+    const isAuthenticated = {{ 'true' if current_user else 'false' }};
+    const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
+    const showAllTabSetting = {{ 'true' if current_user and current_user.show_all_tab else 'false' }};
 
-        const readPoemsTitles = new Set({{ read_poems | tojson | safe }});
-        let pinnedPoemTitle = {{ pinned_title | tojson | safe }};
-        const isAuthenticated = {{ 'true' if current_user else 'false' }};
-        const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
-        const showAllTabSetting = {{ 'true' if current_user and current_user.show_all_tab else 'false' }};
+    // --- 1. ЛОГИКА ФИЛЬТРАЦИИ И СОРТИРОВКИ ---
+    let allPoems = [];
+    let currentPoem = null;
+    let currentFilter = isAuthenticated ? 'unread' : 'unfiltered';
+    let currentSort = { type: 'title', order: 'asc' };
 
-        // --- 1. ЛОГИКА ФИЛЬТРАЦИИ И СОРТИРОВКИ ---
+    const poemsContainer = document.getElementById('poems-container');
+    const searchInput = document.getElementById('search-input');
+    const sortButtonsContainer = document.getElementById('sort-buttons-container');
+    const tabButtons = document.querySelectorAll('.tab');
+    const noResultsMessage = document.getElementById('no-results-message');
+    const modal = document.getElementById('poem-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
 
-        let allPoems = [];
-        let currentPoem = null; // Для модального окна
-        let currentFilter = isAuthenticated ? 'unread' : 'unfiltered';
-        let currentSort = { type: 'title', order: 'asc' };
+    // --- ФУНКЦИИ ---
+    const createPoemCard = (poem) => {
+        const isRead = readPoemsTitles.has(poem.title);
+        const isPinned = poem.title === pinnedPoemTitle;
 
-        const poemsContainer = document.getElementById('poems-container');
-        const searchInput = document.getElementById('search-input');
-        const sortButtonsContainer = document.getElementById('sort-buttons-container');
-        const tabButtons = document.querySelectorAll('.tab');
-        const noResultsMessage = document.getElementById('no-results-message');
+        const card = document.createElement('div');
+        let borderClass = 'border-gray-200';
+        if (isPinned) {
+            borderClass = 'border-orange-500 ring-2 ring-orange-200';
+        } else if (isRead) {
+            borderClass = 'border-sky-100';
+        }
 
-        // Модальное окно
-        const modal = document.getElementById('poem-modal');
-        const closeModalBtn = document.getElementById('close-modal-btn');
+        card.className = `poem-card cursor-pointer p-6 bg-white rounded-xl shadow-lg border-2 ${borderClass} hover:border-sky-500`;
+        card.innerHTML = `
+            <h3 class="text-xl font-bold text-gray-900 mb-1 break-words">${poem.title}</h3>
+            <p class="text-sm text-gray-500 mb-3 italic">Автор: ${poem.author}</p>
+            <p class="text-sm text-gray-500">${poem.line_count} строк</p>
+            ${isAuthenticated ? `
+            <div class="flex flex-wrap gap-2 mt-2">
+                <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${isRead ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-700'}">
+                    ${isRead ? 'Прочитано' : 'Не прочитано'}
+                </span>
+                ${isPinned ? `
+                <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-orange-500 text-white flex items-center">
+                    <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" /></svg>
+                    Изучаю
+                </span>` : ''}
+            </div>
+            ` : ''}
+        `;
+        card.onclick = () => openModal(poem.title);
+        return card;
+    };
 
-        const getReadStatusText = (isRead) => isRead ? 'Прочитано' : 'Не прочитано';
-        const getPinStatusText = (isPinned) => isPinned ? 'Изучаемый стих' : 'Закрепить для изучения';
-
-        const createPoemCard = (poem) => {
+    const filterAndRender = () => {
+        const searchText = searchInput.value.toLowerCase().trim();
+        let filteredPoems = allPoems.filter(poem => {
+            const matchesSearch = poem.title.toLowerCase().includes(searchText) ||
+                poem.author.toLowerCase().includes(searchText) ||
+                poem.text.toLowerCase().includes(searchText);
+            if (!matchesSearch) return false;
+            if (!isAuthenticated) return true;
             const isRead = readPoemsTitles.has(poem.title);
-            const isPinned = poem.title === pinnedPoemTitle;
+            if (currentFilter === 'unread') return !isRead;
+            if (currentFilter === 'read') return isRead;
+            return true;
+        });
 
-            const card = document.createElement('div');
-
-            let borderClass = 'border-gray-200';
-            if (isPinned) {
-                borderClass = 'border-orange-500 ring-2 ring-orange-200';
-            } else if (isRead) {
-                borderClass = 'border-sky-100';
-            }
-
-            card.className = `poem-card cursor-pointer p-6 bg-white rounded-xl shadow-lg border-2 ${borderClass} hover:border-sky-500`;
-            card.innerHTML = `
-                <h3 class="text-xl font-bold text-gray-900 mb-1 break-words">${poem.title}</h3>
-                <p class="text-sm text-gray-500 mb-3 italic">Автор: ${poem.author}</p>
-                <p class="text-sm text-gray-500">${poem.line_count} строк</p>
-                ${isAuthenticated ? `
-                <div class="flex flex-wrap gap-2 mt-2">
-                    <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${isRead ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-700'}">
-                        ${isRead ? 'Прочитано' : 'Не прочитано'}
-                    </span>
-                    ${isPinned ? `
-                    <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-orange-500 text-white flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" /></svg>
-                        Изучаю
-                    </span>` : ''}
-                </div>
-                ` : ''}
-            `;
-            card.onclick = () => openModal(poem.title);
-            return card;
-        };
-
-        const filterAndRender = () => {
-            const searchText = searchInput.value.toLowerCase().trim();
-
-            let filteredPoems = allPoems.filter(poem => {
-                const matchesSearch = poem.title.toLowerCase().includes(searchText) ||
-                    poem.author.toLowerCase().includes(searchText) ||
-                    poem.text.toLowerCase().includes(searchText);
-
-                if (!matchesSearch) return false;
-
-                if (!isAuthenticated) return true;
-
-                const isRead = readPoemsTitles.has(poem.title);
-
-                if (currentFilter === 'unread') return !isRead;
-                if (currentFilter === 'read') return isRead;
-                
-                return true; // для 'unfiltered'
-            });
-
-            let pinnedPoem = null;
-            let finalPoems = [];
-
-            if (isAuthenticated && pinnedPoemTitle) {
-                pinnedPoem = filteredPoems.find(p => p.title === pinnedPoemTitle);
-                if (pinnedPoem) {
-                    filteredPoems = filteredPoems.filter(p => p.title !== pinnedPoemTitle);
-                }
-            }
-
-            filteredPoems.sort((a, b) => {
-                let valA, valB;
-
-                if (currentSort.type === 'length') {
-                    valA = a.line_count;
-                    valB = b.line_count;
-                } else if (currentSort.type === 'author') {
-                    valA = a.author.toLowerCase();
-                    valB = b.author.toLowerCase();
-                } else { // title
-                    valA = a.title.toLowerCase();
-                    valB = b.title.toLowerCase();
-                }
-
-                if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
-                if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
-                return 0;
-            });
-
+        let pinnedPoem = null;
+        let finalPoems = [];
+        if (isAuthenticated && pinnedPoemTitle) {
+            pinnedPoem = filteredPoems.find(p => p.title === pinnedPoemTitle);
             if (pinnedPoem) {
-                finalPoems.push(pinnedPoem);
-            }
-            finalPoems.push(...filteredPoems);
-
-            poemsContainer.innerHTML = '';
-            if (finalPoems.length === 0) {
-                noResultsMessage.classList.remove('hidden');
-            } else {
-                noResultsMessage.classList.add('hidden');
-                finalPoems.forEach(poem => {
-                    poemsContainer.appendChild(createPoemCard(poem));
-                });
-            }
-        };
-
-        const updateTabCounts = () => {
-            if (!isAuthenticated) {
-                document.getElementById('count-all').textContent = allPoems.length;
-                return;
-            }
-
-            const readCount = allPoems.filter(poem => readPoemsTitles.has(poem.title)).length;
-            const unreadCount = allPoems.length - readCount;
-
-            document.getElementById('count-all').textContent = allPoems.length;
-            document.getElementById('count-unread').textContent = unreadCount;
-            document.getElementById('count-read').textContent = readCount;
-        };
-
-        const openModal = (title) => {
-            currentPoem = allPoems.find(p => p.title === title);
-            if (!currentPoem) {
-                console.error('Стих не найден:', title);
-                return;
-            }
-
-            document.getElementById('modal-title').textContent = currentPoem.title;
-            document.getElementById('modal-author').textContent = `Автор: ${currentPoem.author}`;
-            document.getElementById('modal-text').textContent = currentPoem.text;
-
-            if (isAuthenticated) {
-                const isRead = readPoemsTitles.has(title);
-                const isPinned = title === pinnedPoemTitle;
-
-                updateModalReadButton(isRead);
-                updateModalPinButton(isPinned);
-
-                document.getElementById('read-button-wrapper').classList.remove('hidden');
-                document.getElementById('pin-button-wrapper').classList.remove('hidden');
-
-            } else {
-                document.getElementById('read-button-wrapper').classList.add('hidden');
-                document.getElementById('pin-button-wrapper').classList.add('hidden');
-            }
-
-            modal.classList.add('open');
-        };
-
-        const closeModal = () => {
-            modal.classList.remove('open');
-            currentPoem = null;
-        };
-
-        const updateModalReadButton = (isRead) => {
-            const toggleReadBtn = document.getElementById('toggle-read-btn');
-            const readStatusText = document.getElementById('read-status-text');
-            if (!toggleReadBtn) return;
-
-            if (isRead) {
-                toggleReadBtn.classList.remove('bg-gray-100', 'text-gray-700');
-                toggleReadBtn.classList.add('bg-sky-500', 'text-white');
-                readStatusText.textContent = 'Прочитано';
-            } else {
-                toggleReadBtn.classList.remove('bg-sky-500', 'text-white');
-                toggleReadBtn.classList.add('bg-gray-100', 'text-gray-700');
-                readStatusText.textContent = 'Отметить как прочитанное';
+                filteredPoems = filteredPoems.filter(p => p.title !== pinnedPoemTitle);
             }
         }
 
-        const handleToggleRead = async () => {
-            if (!currentPoem) return;
-
-            const url = `/toggle_read`;
-
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title: currentPoem.title })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-
-                    if (data.action === 'marked') {
-                        readPoemsTitles.add(currentPoem.title);
-                    } else {
-                        readPoemsTitles.delete(currentPoem.title);
-                    }
-
-                    updateModalReadButton(readPoemsTitles.has(currentPoem.title));
-                    updateTabCounts();
-                    filterAndRender();
-
-                } else {
-                    console.error('Ошибка при переключении статуса прочтения.');
-                }
-            } catch (error) {
-                console.error('Сетевая ошибка при переключении статуса:', error);
-            }
-        };
-
-                const updateModalPinButton = (isPinned) => {
-            const togglePinBtn = document.getElementById('toggle-pin-btn');
-            const pinStatusText = document.getElementById('pin-status-text');
-            if (!togglePinBtn) return;
-
-            if (isPinned) {
-                togglePinBtn.classList.remove('bg-gray-100', 'text-gray-700');
-                togglePinBtn.classList.add('bg-orange-500', 'text-white');
-                pinStatusText.textContent = 'Изучаемый стих';
+        filteredPoems.sort((a, b) => {
+            let valA, valB;
+            if (currentSort.type === 'length') {
+                valA = a.line_count;
+                valB = b.line_count;
+            } else if (currentSort.type === 'author') {
+                valA = a.author.toLowerCase();
+                valB = b.author.toLowerCase();
             } else {
-                togglePinBtn.classList.remove('bg-orange-500', 'text-white');
-                togglePinBtn.classList.add('bg-gray-100', 'text-gray-700');
-                pinStatusText.textContent = 'Закрепить для изучения';
+                valA = a.title.toLowerCase();
+                valB = b.title.toLowerCase();
             }
-        }; // <-- ЗДЕСЬ ДОБАВЬ ЗАКРЫВАЮЩУЮ ФИГУРНУЮ СКОБКУ И ТОЧКУ С ЗАПЯТОЙ
+            if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
+            return 0;
+        });
 
-        const handleTogglePin = async () => {
-            if (!currentPoem) return;
+        if (pinnedPoem) finalPoems.push(pinnedPoem);
+        finalPoems.push(...filteredPoems);
 
-            const url = `/toggle_pin`;
+        poemsContainer.innerHTML = '';
+        if (finalPoems.length === 0) {
+            noResultsMessage.classList.remove('hidden');
+        } else {
+            noResultsMessage.classList.add('hidden');
+            finalPoems.forEach(poem => {
+                poemsContainer.appendChild(createPoemCard(poem));
+            });
+        }
+    };
 
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title: currentPoem.title })
-                });
+    const updateTabCounts = () => {
+        if (!isAuthenticated) {
+            document.getElementById('count-all').textContent = allPoems.length;
+            return;
+        }
+        const readCount = allPoems.filter(poem => readPoemsTitles.has(poem.title)).length;
+        const unreadCount = allPoems.length - readCount;
+        document.getElementById('count-all').textContent = allPoems.length;
+        document.getElementById('count-unread').textContent = unreadCount;
+        document.getElementById('count-read').textContent = readCount;
+    };
 
-                if (response.ok) {
-                    const data = await response.json();
-                    pinnedPoemTitle = data.pinned_title;
-                    updateModalPinButton(currentPoem.title === pinnedPoemTitle);
-                    updateTabCounts();
-                    filterAndRender();
+    const openModal = (title) => {
+        currentPoem = allPoems.find(p => p.title === title);
+        if (!currentPoem) {
+            console.error('Стих не найден:', title);
+            return;
+        }
+
+        document.getElementById('modal-title').textContent = currentPoem.title;
+        document.getElementById('modal-author').textContent = `Автор: ${currentPoem.author}`;
+        document.getElementById('modal-text').textContent = currentPoem.text;
+
+        if (isAuthenticated) {
+            const isRead = readPoemsTitles.has(title);
+            const isPinned = title === pinnedPoemTitle;
+
+            updateModalReadButton(isRead);
+            updateModalPinButton(isPinned);
+
+            document.getElementById('read-button-wrapper').classList.remove('hidden');
+            document.getElementById('pin-button-wrapper').classList.remove('hidden');
+
+            // УДАЛИ СТАРЫЕ ОБРАБОТЧИКИ И ДОБАВЬ НОВЫЕ
+            const readBtn = document.getElementById('toggle-read-btn');
+            const pinBtn = document.getElementById('toggle-pin-btn');
+            
+            // Удаляем старые обработчики
+            readBtn.replaceWith(readBtn.cloneNode(true));
+            pinBtn.replaceWith(pinBtn.cloneNode(true));
+            
+            // Добавляем новые обработчики
+            document.getElementById('toggle-read-btn').addEventListener('click', handleToggleRead);
+            document.getElementById('toggle-pin-btn').addEventListener('click', handleTogglePin);
+
+        } else {
+            document.getElementById('read-button-wrapper').classList.add('hidden');
+            document.getElementById('pin-button-wrapper').classList.add('hidden');
+        }
+
+        modal.classList.add('open');
+    };
+
+    const closeModal = () => {
+        modal.classList.remove('open');
+        currentPoem = null;
+    };
+
+    const updateModalReadButton = (isRead) => {
+        const toggleReadBtn = document.getElementById('toggle-read-btn');
+        const readStatusText = document.getElementById('read-status-text');
+        if (!toggleReadBtn) return;
+
+        if (isRead) {
+            toggleReadBtn.classList.remove('bg-gray-100', 'text-gray-700');
+            toggleReadBtn.classList.add('bg-sky-500', 'text-white');
+            readStatusText.textContent = 'Прочитано';
+        } else {
+            toggleReadBtn.classList.remove('bg-sky-500', 'text-white');
+            toggleReadBtn.classList.add('bg-gray-100', 'text-gray-700');
+            readStatusText.textContent = 'Отметить как прочитанное';
+        }
+    };
+
+    const updateModalPinButton = (isPinned) => {
+        const togglePinBtn = document.getElementById('toggle-pin-btn');
+        const pinStatusText = document.getElementById('pin-status-text');
+        if (!togglePinBtn) return;
+
+        if (isPinned) {
+            togglePinBtn.classList.remove('bg-gray-100', 'text-gray-700');
+            togglePinBtn.classList.add('bg-orange-500', 'text-white');
+            pinStatusText.textContent = 'Изучаемый стих';
+        } else {
+            togglePinBtn.classList.remove('bg-orange-500', 'text-white');
+            togglePinBtn.classList.add('bg-gray-100', 'text-gray-700');
+            pinStatusText.textContent = 'Закрепить для изучения';
+        }
+    };
+
+    const handleToggleRead = async () => {
+        if (!currentPoem) return;
+
+        const url = `/toggle_read`;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: currentPoem.title })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.action === 'marked') {
+                    readPoemsTitles.add(currentPoem.title);
                 } else {
-                    const errorData = await response.json();
-                    console.error('Ошибка при переключении закрепления:', errorData.message);
+                    readPoemsTitles.delete(currentPoem.title);
                 }
-            } catch (error) {
-                console.error('Сетевая ошибка при переключении закрепления:', error);
+                updateModalReadButton(readPoemsTitles.has(currentPoem.title));
+                updateTabCounts();
+                filterAndRender();
+            } else {
+                console.error('Ошибка при переключении статуса прочтения.');
             }
-        };
+        } catch (error) {
+            console.error('Сетевая ошибка при переключении статуса:', error);
+        }
+    };
 
-        // --- 3. ОБРАБОТЧИКИ СОБЫТИЙ ---
+    const handleTogglePin = async () => {
+        if (!currentPoem) return;
 
+        const url = `/toggle_pin`;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: currentPoem.title })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                pinnedPoemTitle = data.pinned_title;
+                updateModalPinButton(currentPoem.title === pinnedPoemTitle);
+                updateTabCounts();
+                filterAndRender();
+            } else {
+                const errorData = await response.json();
+                console.error('Ошибка при переключении закрепления:', errorData.message);
+            }
+        } catch (error) {
+            console.error('Сетевая ошибка при переключении закрепления:', error);
+        }
+    };
+
+    // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
+    window.onload = () => {
+        allPoems = allData;
+
+        // Настройка иконок сортировки
+        const allIcons = document.querySelectorAll('.sort-arrow-icon');
+        allIcons.forEach(icon => {
+            if (icon.dataset.sortIcon === currentSort.type) {
+                icon.style.opacity = 1;
+                icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
+            } else {
+                icon.style.opacity = 0;
+            }
+        });
+
+        updateTabCounts();
+        filterAndRender();
+
+        // Обработчики вкладок
         tabButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const currentActive = document.querySelector('.tab.active');
@@ -495,14 +492,16 @@
             });
         });
 
+        // Закрытие модального окна
         closeModalBtn.addEventListener('click', closeModal);
-        if (isAuthenticated) {
-            document.getElementById('toggle-read-btn').addEventListener('click', handleToggleRead);
-            document.getElementById('toggle-pin-btn').addEventListener('click', handleTogglePin);
-        }
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) closeModal();
+        });
 
+        // Поиск
         searchInput.addEventListener('input', filterAndRender);
 
+        // Сортировка
         sortButtonsContainer.addEventListener('click', (e) => {
             const targetButton = e.target.closest('button.sort-btn');
             if (!targetButton) return;
@@ -516,7 +515,6 @@
             }
 
             targetButton.dataset.order = currentSort.order;
-
             const activeSort = sortButtonsContainer.querySelector('.active');
             if (activeSort) activeSort.classList.remove('active');
             targetButton.classList.add('active');
@@ -534,34 +532,14 @@
             filterAndRender();
         });
 
-        modal.addEventListener('click', (event) => {
-            if (event.target === modal) {
-                closeModal();
-            }
-        });
-
+        // Escape для закрытия модального окна
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && modal.classList.contains('open')) {
                 closeModal();
             }
         });
-
-        window.onload = () => {
-            allPoems = allData;
-
-            const allIcons = document.querySelectorAll('.sort-arrow-icon');
-            allIcons.forEach(icon => {
-                if (icon.dataset.sortIcon === currentSort.type) {
-                    icon.style.opacity = 1;
-                    icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
-                } else {
-                    icon.style.opacity = 0;
-                }
-            });
-
-            updateTabCounts();
-            filterAndRender();
-        };
-    </script>
+    };
+</script>
+{% endblock %}                                          
 </body>
 </html>
