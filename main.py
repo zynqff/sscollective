@@ -15,6 +15,11 @@ from supabase import create_client, Client
 # --- 0. ЗАГРУЗКА .env ---
 load_dotenv()
 
+# Загружаем списки админов из .env
+ADMIN_USERNAMES = os.getenv("ADMIN_USERNAMES", "").split(",")
+ADMIN_PASSWORDS = os.getenv("ADMIN_PASSWORDS", "").split(",")
+ADMINS_DICT = dict(zip(ADMIN_USERNAMES, ADMIN_PASSWORDS))
+
 # --- 1. КОНФИГУРАЦИЯ ПРИЛОЖЕНИЯ ---
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -253,28 +258,35 @@ async def login_get(request: Request, current_user: Optional[dict] = Depends(get
 @app.post("/login")
 async def login_post(
     request: Request,
-    db: Client = Depends(get_db),
     username: str = Form(...),
-    password: str = Form(...)
+    password: str = Form(...),
+    db: Client = Depends(get_db)
 ):
-    user = get_user(db, username)
-    if not user or not check_password(password, user['password_hash']):
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "error": "Неправильный логин или пароль."
-        })
+    # 1. Проверка "виртуальных" админов из .env
+    if username in ADMINS_DICT:
+        if password == ADMINS_DICT[username]:
+            access_token = create_access_token(data={"sub": username, "is_admin": True})
+            # Перенаправляем на главную или в админку
+            resp = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+            resp.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+            return resp
+        else:
+            return templates.TemplateResponse("login.html", {"request": {}, "error": "Неверный пароль администратора"})
 
-    access_token = create_access_token(data={"sub": user['username']})
-    
-    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(
-        key="access_token",
-        value=f"Bearer {access_token}",
-        httponly=True,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="Lax"
-    )
-    return response
+    # 2. Проверка обычных пользователей в таблице 'user'
+    try:
+        user_res = db.table('user').select("*").eq("username", username).execute()
+        if user_res.data:
+            user = user_res.data[0]
+            if verify_password(password, user['password_hash']):
+                access_token = create_access_token(data={"sub": username, "is_admin": user.get('is_admin', False)})
+                resp = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+                resp.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+                return resp
+    except Exception as e:
+        print(f"Ошибка входа: {e}")
+
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверное имя пользователя или пароль"})
 
 @app.get("/logout")
 async def logout():
