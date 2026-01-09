@@ -544,3 +544,24 @@ async def edit_poem_post(
             # Проверяем, не занято ли новое имя
             if db.table('poem').select('title').eq('title', update_data['title']).execute().data:
                 raise HTTPExcept
+# --- 5. МАРШРУТЫ (ЭНДПОИНТЫ) ---
+# ... все остальные маршруты остаются как были ...
+
+@app.post("/delete_poem/{title}")
+async def delete_poem(title: str, db: Client = Depends(get_db), admin: dict = Depends(get_admin_user)):
+    poem_to_delete = db.table('poem').select('title').eq('title', title).execute()
+    if not poem_to_delete.data:
+        raise HTTPException(status_code=404, detail="Стих не найден.")
+        
+    try:
+        db.table('poem').delete().eq('title', title).execute()
+        return {"success": True, "message": f"Стих '{title}' успешно удален."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при удалении: {str(e)}")
+
+
+# --- ЗАПУСК ПРИЛОЖЕНИЯ ---
+if __name__ == "__main__":
+    print("Запуск FastAPI приложения...")
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
