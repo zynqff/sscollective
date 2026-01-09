@@ -150,11 +150,24 @@ def get_current_user(request: Request, db: Client = Depends(get_db)) -> dict:
             headers={"Location": "/login"},
         )
     try:
-        token = token.split(" ")[1]
+        # Проверяем формат токена
+        if token.startswith("Bearer "):
+            token = token.split(" ")[1]
+        
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401, detail="Invalid token payload")
+        
+        # Проверяем виртуальных админов
+        if username in ADMINS_DICT:
+            return {
+                'username': username,
+                'is_admin': True,
+                'read_poems_json': [],
+                'pinned_poem_title': None,
+                'show_all_tab': False
+            }
         
         user = get_user(db, username)
         if user is None:
@@ -162,10 +175,9 @@ def get_current_user(request: Request, db: Client = Depends(get_db)) -> dict:
         
         return user
         
-    except (jwt.PyJWTError, IndexError):
+    except (jwt.PyJWTError, IndexError, jwt.exceptions.DecodeError) as e:
+        print(f"JWT Error: {e}")
         # Если токен невалиден, перенаправляем на логин
-        response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-        response.delete_cookie("access_token")
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
             headers={"Location": "/login"},
@@ -191,7 +203,12 @@ async def read_root(request: Request, db: Client = Depends(get_db), current_user
 
     read_poems = []
     if current_user:
-        read_poems_json = current_user.get('read_poems_json')
+        # Обработка для виртуальных админов
+        if current_user.get('username') in ADMINS_DICT:
+            read_poems_json = []
+        else:
+            read_poems_json = current_user.get('read_poems_json')
+        
         if isinstance(read_poems_json, str):
             try:
                 read_poems = json.loads(read_poems_json)
@@ -275,12 +292,12 @@ async def login_post(
     if username in ADMINS_DICT:
         if password == ADMINS_DICT[username]:
             access_token = create_access_token(data={"sub": username, "is_admin": True})
-            # Перенаправляем на главную или в админку
+            # Перенаправляем на главную
             resp = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-            resp.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+            resp.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True, max_age=60*60*24)
             return resp
         else:
-            return templates.TemplateResponse("login.html", {"request": {}, "error": "Неверный пароль администратора"})
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль администратора"})
 
     # 2. Проверка обычных пользователей в таблице 'user'
     try:
@@ -288,9 +305,12 @@ async def login_post(
         if user_res.data:
             user = user_res.data[0]
             if verify_password(password, user['password_hash']):
-                access_token = create_access_token(data={"sub": username, "is_admin": user.get('is_admin', False)})
+                access_token = create_access_token(data={
+                    "sub": username, 
+                    "is_admin": user.get('is_admin', False)
+                })
                 resp = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-                resp.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+                resp.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True, max_age=60*60*24)
                 return resp
     except Exception as e:
         print(f"Ошибка входа: {e}")
@@ -306,7 +326,12 @@ async def logout():
 
 @app.get("/profile", response_class=HTMLResponse)
 async def profile_get(request: Request, current_user: dict = Depends(get_current_user)):
-    return templates.TemplateResponse("profile.html", {"request": request, "current_user": current_user, "user_data": current_user.get('user_data', ''), "show_all_tab": current_user.get('show_all_tab', False)})
+    return templates.TemplateResponse("profile.html", {
+        "request": request, 
+        "current_user": current_user, 
+        "user_data": current_user.get('user_data', ''), 
+        "show_all_tab": current_user.get('show_all_tab', False)
+    })
 
 @app.post("/profile", response_class=HTMLResponse)
 async def profile_post(
@@ -317,13 +342,26 @@ async def profile_post(
     user_data: Optional[str] = Form(None),
     show_all_tab: Optional[str] = Form(None)
 ):
+    # Проверяем, является ли пользователь виртуальным админом
+    if current_user.get('username') in ADMINS_DICT:
+        return templates.TemplateResponse("profile.html", {
+            "request": request, 
+            "current_user": current_user,
+            "user_data": current_user.get('user_data', ''),
+            "show_all_tab": current_user.get('show_all_tab', False),
+            "error": "Настройки профиля недоступны для виртуальных администраторов"
+        })
+    
     update_data = {}
     
     if new_password:
         if len(new_password) < 4:
             return templates.TemplateResponse("profile.html", {
-                "request": request, "current_user": current_user, "user_data": current_user.get('user_data'),
-                "show_all_tab": current_user.get('show_all_tab'), "error": "Новый пароль должен быть не менее 4 символов."
+                "request": request, 
+                "current_user": current_user, 
+                "user_data": current_user.get('user_data', ''),
+                "show_all_tab": current_user.get('show_all_tab', False),
+                "error": "Новый пароль должен быть не менее 4 символов."
             })
         update_data['password_hash'] = set_password(new_password)
 
@@ -334,18 +372,23 @@ async def profile_post(
 
     if update_data:
         try:
-            response = db.table('user').update(update_data).eq('username', current_user['username']).execute()
+            db.table('user').update(update_data).eq('username', current_user['username']).execute()
             # Обновляем данные пользователя для отображения
             current_user.update(update_data)
 
         except Exception as e:
             return templates.TemplateResponse("profile.html", {
-                "request": request, "current_user": current_user, "error": f"Ошибка обновления: {e}"
+                "request": request, 
+                "current_user": current_user, 
+                "error": f"Ошибка обновления: {e}"
             })
 
     return templates.TemplateResponse("profile.html", {
-        "request": request, "current_user": current_user, "user_data": current_user.get('user_data'),
-        "show_all_tab": current_user.get('show_all_tab'), "success": "Настройки профиля обновлены!"
+        "request": request, 
+        "current_user": current_user, 
+        "user_data": current_user.get('user_data', ''),
+        "show_all_tab": current_user.get('show_all_tab', False), 
+        "success": "Настройки профиля обновлены!"
     })
 
 
@@ -355,15 +398,22 @@ async def toggle_read(
     db: Client = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    # Проверяем, является ли пользователь виртуальным админом
+    if current_user.get('username') in ADMINS_DICT:
+        raise HTTPException(status_code=403, detail="Виртуальные администраторы не могут отмечать прочитанные стихи")
+    
     poem_resp = db.table('poem').select('title').eq('title', toggle_data.title).execute()
     if not poem_resp.data:
         raise HTTPException(status_code=404, detail="Стих не найден")
 
     try:
         # Get current read list
-        read_json = current_user.get('read_poems_json')
+        read_json = current_user.get('read_poems_json', [])
         if isinstance(read_json, str):
-            read_list = json.loads(read_json)
+            try:
+                read_list = json.loads(read_json)
+            except json.JSONDecodeError:
+                read_list = []
         elif isinstance(read_json, list):
             read_list = read_json
         else:
@@ -391,18 +441,35 @@ async def toggle_pin(
     db: Client = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    # Проверяем, является ли пользователь виртуальным админом
+    if current_user.get('username') in ADMINS_DICT:
+        raise HTTPException(status_code=403, detail="Виртуальные администраторы не могут закреплять стихи")
+    
     poem_resp = db.table('poem').select('title').eq('title', toggle_data.title).execute()
     if not poem_resp.data:
         raise HTTPException(status_code=404, detail="Стих не найден")
 
     try:
-        action = toggle_pinned_poem(current_user, toggle_data.title)
+        # Get current pinned title
+        current_pinned = current_user.get('pinned_poem_title')
         
+        if current_pinned == toggle_data.title:
+            new_pinned = None
+            action = "unpinned"
+        else:
+            new_pinned = toggle_data.title
+            action = "pinned"
+        
+        # Update in database
         db.table('user').update({
-            'pinned_poem_title': current_user['pinned_poem_title']
+            'pinned_poem_title': new_pinned
         }).eq('username', current_user['username']).execute()
         
-        return {"success": True, "action": action, "pinned_title": current_user['pinned_poem_title']}
+        return {
+            "success": True, 
+            "action": action, 
+            "pinned_title": new_pinned
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка при обновлении БД: {str(e)}")
 
@@ -476,63 +543,4 @@ async def edit_poem_post(
         if update_data['title'] != original_title:
             # Проверяем, не занято ли новое имя
             if db.table('poem').select('title').eq('title', update_data['title']).execute().data:
-                raise HTTPException(status_code=409, detail=f'Стих с новым названием "{update_data["title"]}" уже существует.')
-        
-        response = db.table('poem').update(update_data).eq('title', original_title).execute()
-        
-        if not response.data:
-             raise HTTPException(status_code=500, detail="Не удалось обновить стих.")
-        
-        updated_poem = response.data[0]
-        updated_poem['text'] = updated_poem.get('text', '').replace('\\n', '\n')
-        updated_poem['line_count'] = len(updated_poem.get('text', '').split('\n'))
-        
-        return {"success": True, "message": f'Стих "{updated_poem["title"]}" успешно обновлен!', "poem": updated_poem}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка БД: {str(e)}")
-
-@app.post("/delete_poem/{title}")
-async def delete_poem(title: str, db: Client = Depends(get_db), admin: dict = Depends(get_admin_user)):
-    poem_to_delete = db.table('poem').select('title').eq('title', title).execute()
-    if not poem_to_delete.data:
-        raise HTTPException(status_code=404, detail="Стих не найден.")
-        
-    try:
-        db.table('poem').delete().eq('title', title).execute()
-        return {"success": True, "message": f"Стих '{title}' успешно удален."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при удалении: {str(e)}")
-
-
-# --- 6. ИНИЦИАЛИЗАЦИЯ ДАННЫХ (для Supabase) ---
-def initialize_db_data():
-    """
-    Проверяет наличие админа и создает его, если он отсутствует.
-    Не трогает таблицу со стихами.
-    """
-    db = get_db()
-    
-    try:
-        if not get_user(db, 'admin'):
-            ADMIN_PASSWORD = 'zynqochka'
-            admin_user_data = {
-                'username': 'admin', 
-                'password_hash': get_password_hash(ADMIN_PASSWORD),
-                'is_admin': True
-            }
-            db.table('user').insert(admin_user_data).execute()
-            print("Администратор 'admin' создан в Supabase.")
-    except Exception as e:
-        print(f"Ошибка при создании админа: {e}")
-
-
-if __name__ == "__main__":
-    print("Инициализация данных в Supabase...")
-    initialize_db_data()
-    print("Запуск FastAPI приложения...")
-    import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
-else:
-    # Этот блок выполняется, когда gunicorn/uvicorn запускают приложение
-    initialize_db_data()
+                raise HTTPExcept
