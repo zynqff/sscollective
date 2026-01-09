@@ -22,7 +22,10 @@ load_dotenv()
 ADMIN_USERNAMES = os.getenv("ADMIN_USERNAMES", "").split(",")
 ADMIN_PASSWORDS = os.getenv("ADMIN_PASSWORDS", "").split(",")
 ADMINS_DICT = dict(zip(ADMIN_USERNAMES, ADMIN_PASSWORDS))
-
+# Загружаем SECRET_KEY из .env
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in the .env file")
 # --- 1. КОНФИГУРАЦИЯ ПРИЛОЖЕНИЯ ---
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -117,7 +120,6 @@ def toggle_pinned_poem(user: dict, title: str) -> str:
         return 'pinned'
 
 # --- 4. НАСТРОЙКА АУТЕНТИФИКАЦИИ (JWT) ---
-SECRET_KEY = "sUper_sEcrEt_kEy_fOr_pRojeCt_2024_fAstApi"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 day
 
@@ -543,9 +545,21 @@ async def edit_poem_post(
         if update_data['title'] != original_title:
             # Проверяем, не занято ли новое имя
             if db.table('poem').select('title').eq('title', update_data['title']).execute().data:
-                raise HTTPExcept
-# --- 5. МАРШРУТЫ (ЭНДПОИНТЫ) ---
-# ... все остальные маршруты остаются как были ...
+                raise HTTPException(status_code=409, detail=f'Стих с новым названием "{update_data["title"]}" уже существует.')
+        
+        response = db.table('poem').update(update_data).eq('title', original_title).execute()
+        
+        if not response.data:
+             raise HTTPException(status_code=500, detail="Не удалось обновить стих.")
+        
+        updated_poem = response.data[0]
+        updated_poem['text'] = updated_poem.get('text', '').replace('\\n', '\n')
+        updated_poem['line_count'] = len(updated_poem.get('text', '').split('\n'))
+        
+        return {"success": True, "message": f'Стих "{updated_poem["title"]}" успешно обновлен!', "poem": updated_poem}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка БД: {str(e)}")
 
 @app.post("/delete_poem/{title}")
 async def delete_poem(title: str, db: Client = Depends(get_db), admin: dict = Depends(get_admin_user)):
