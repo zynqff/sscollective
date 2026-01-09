@@ -11,6 +11,9 @@ from typing import Optional, List
 import json
 from dotenv import load_dotenv
 from supabase import create_client, Client
+import logging
+# Отключаем логирование ошибок внутри passlib, чтобы они не засоряли консоль
+logging.getLogger("passlib").setLevel(logging.ERROR)
 
 # --- 0. ЗАГРУЗКА .env ---
 load_dotenv()
@@ -68,6 +71,9 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 def verify_password(plain_password, hashed_password):
+    # Ограничиваем длину пароля до 72 символов, чтобы bcrypt не падал
+    if len(plain_password) > 72:
+        plain_password = plain_password[:72]
     return pwd_context.verify(plain_password, hashed_password)
 
 def set_password(password):
