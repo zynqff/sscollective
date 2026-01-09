@@ -440,6 +440,128 @@
             }
         };
 
-        const updateModalPinButton = (isPinned) => {
+                const updateModalPinButton = (isPinned) => {
             const togglePinBtn = document.getElementById('toggle-pin-btn');
-          
+            const pinStatusText = document.getElementById('pin-status-text');
+            if (!togglePinBtn) return;
+
+            if (isPinned) {
+                togglePinBtn.classList.remove('bg-gray-100', 'text-gray-700');
+                togglePinBtn.classList.add('bg-orange-500', 'text-white');
+                pinStatusText.textContent = 'Изучаемый стих';
+            } else {
+                togglePinBtn.classList.remove('bg-orange-500', 'text-white');
+                togglePinBtn.classList.add('bg-gray-100', 'text-gray-700');
+                pinStatusText.textContent = 'Закрепить для изучения';
+            }
+        }; // <-- ЗДЕСЬ ДОБАВЬ ЗАКРЫВАЮЩУЮ ФИГУРНУЮ СКОБКУ И ТОЧКУ С ЗАПЯТОЙ
+
+        const handleTogglePin = async () => {
+            if (!currentPoem) return;
+
+            const url = `/toggle_pin`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: currentPoem.title })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    pinnedPoemTitle = data.pinned_title;
+                    updateModalPinButton(currentPoem.title === pinnedPoemTitle);
+                    updateTabCounts();
+                    filterAndRender();
+                } else {
+                    const errorData = await response.json();
+                    console.error('Ошибка при переключении закрепления:', errorData.message);
+                }
+            } catch (error) {
+                console.error('Сетевая ошибка при переключении закрепления:', error);
+            }
+        };
+
+        // --- 3. ОБРАБОТЧИКИ СОБЫТИЙ ---
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const currentActive = document.querySelector('.tab.active');
+                if (currentActive) currentActive.classList.remove('active');
+                button.classList.add('active');
+                currentFilter = button.dataset.filter;
+                filterAndRender();
+            });
+        });
+
+        closeModalBtn.addEventListener('click', closeModal);
+        if (isAuthenticated) {
+            document.getElementById('toggle-read-btn').addEventListener('click', handleToggleRead);
+            document.getElementById('toggle-pin-btn').addEventListener('click', handleTogglePin);
+        }
+
+        searchInput.addEventListener('input', filterAndRender);
+
+        sortButtonsContainer.addEventListener('click', (e) => {
+            const targetButton = e.target.closest('button.sort-btn');
+            if (!targetButton) return;
+
+            const newSortType = targetButton.dataset.sort;
+            if (newSortType === currentSort.type) {
+                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.type = newSortType;
+                currentSort.order = 'asc';
+            }
+
+            targetButton.dataset.order = currentSort.order;
+
+            const activeSort = sortButtonsContainer.querySelector('.active');
+            if (activeSort) activeSort.classList.remove('active');
+            targetButton.classList.add('active');
+
+            const allIcons = document.querySelectorAll('.sort-arrow-icon');
+            allIcons.forEach(icon => {
+                if (icon.dataset.sortIcon === currentSort.type) {
+                    icon.style.opacity = 1;
+                    icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
+                } else {
+                    icon.style.opacity = 0;
+                }
+            });
+
+            filterAndRender();
+        });
+
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && modal.classList.contains('open')) {
+                closeModal();
+            }
+        });
+
+        window.onload = () => {
+            allPoems = allData;
+
+            const allIcons = document.querySelectorAll('.sort-arrow-icon');
+            allIcons.forEach(icon => {
+                if (icon.dataset.sortIcon === currentSort.type) {
+                    icon.style.opacity = 1;
+                    icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
+                } else {
+                    icon.style.opacity = 0;
+                }
+            });
+
+            updateTabCounts();
+            filterAndRender();
+        };
+    </script>
+</body>
+</html>
