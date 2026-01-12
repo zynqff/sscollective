@@ -1,459 +1,456 @@
-<!DOCTYPE html>
-<html lang="ru">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Сборник Стихов</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --accent-color: #38bdf8;
-            --text-color: #374151;
-        }
+{% block content %}
+<div class="mb-8 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
+    <input type="search" id="search-input" placeholder="Поиск по названию, автору или тексту..."
+        class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-sky-500 focus:border-sky-500 transition duration-150 text-lg">
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f9fafb;
-        }
-
-        pre.poem {
-            white-space: pre-wrap;
-            line-height: 1.6;
-            font-family: inherit;
-            font-size: 1rem;
-            color: var(--text-color);
-            margin: 0;
-        }
-
-        .modal {
-            transition: opacity 0.3s ease-in-out;
-            opacity: 0;
-            visibility: hidden;
-        }
-
-        .modal.open {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .tab.active,
-        .sort-btn.active {
-            @apply bg-sky-500 text-white shadow-md;
-        }
-
-        .tab:not(.active),
-        .sort-btn:not(.active) {
-            @apply bg-white text-gray-700 hover:bg-gray-100;
-        }
-
-        .poem-card {
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .poem-card:hover {
-            transform: translateY(-2px);
-            @apply shadow-lg;
-        }
-
-        .sort-arrow-icon {
-            transition: opacity 0.2s ease, transform 0.2s ease;
-            opacity: 0;
-        }
-    </style>
-</head>
-
-<body class="bg-gray-50 min-h-screen">
-
-    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-
-        <header class="flex flex-col sm:flex-row justify-between items-center py-4 mb-8 border-b border-gray-200">
-            <h1 class="text-4xl font-extrabold text-gray-900 mb-4 sm:mb-0">Сборник Стихов</h1>
-            <nav class="flex items-center space-x-4">
-                {% if current_user %}
-                {% if current_user.is_admin %}
-                <span class="text-red-600 font-bold">Администратор</span>
-                <a href="{{ request.url_for('admin_panel') }}" class="text-red-600 hover:text-red-700 font-semibold">Панель
-                    админа</a>
-                {% endif %}
-                <a href="{{ request.url_for('profile_get') }}" class="text-gray-700 hover:text-sky-600 font-semibold">Профиль ({{
-                    current_user.username }})</a>
-                <a href="{{ request.url_for('logout') }}" class="text-gray-700 hover:text-sky-600 font-semibold">Выйти</a>
-                {% else %}
-                <a href="{{ request.url_for('login_get') }}" class="text-sky-500 hover:text-sky-600 font-semibold">Войти</a>
-                <a href="{{ request.url_for('register_get') }}"
-                    class="text-sky-500 hover:text-sky-600 font-semibold">Регистрация</a>
-                {% endif %}
-            </nav>
-        </header>
-
-        <div class="mb-8 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-            <input type="search" id="search-input" placeholder="Поиск по названию, автору или тексту..."
-                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-sky-500 focus:border-sky-500 transition duration-150 text-lg">
-
-            {% if current_user %}
-            <div class="flex flex-nowrap overflow-x-auto gap-3 justify-center mt-4 p-2 -m-2">
-
-                <button data-filter="unfiltered" id="tab-unfiltered"
-                    class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150 {% if not show_all_tab %}hidden{% endif %}">Все
-                    (<span id="count-all">0</span>)</button>
-
-                <button data-filter="unread" id="tab-unread"
-                    class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150 active">Непрочитанные
-                    (<span id="count-unread">0</span>)</button>
-
-                <button data-filter="read" id="tab-read"
-                    class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150">Прочитанные
-                    (<span id="count-read">0</span>)</button>
-
-            </div>
-            {% else %}
-            <div class="flex flex-nowrap overflow-x-auto gap-3 justify-center mt-4 p-2 -m-2">
-                <button data-filter="unfiltered" id="tab-unfiltered-public"
-                    class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150 active">Все
-                    (<span id="count-all">0</span>)</button>
-            </div>
-            {% endif %}
-
-            <div id="sort-buttons-container"
-                class="flex flex-wrap gap-2 justify-center mt-4 pt-4 border-t border-gray-100">
-                <span class="font-medium text-gray-700 mr-2 self-center">Сортировать по:</span>
-
-                <button data-sort="title" data-order="asc"
-                    class="sort-btn active px-4 py-2 rounded-lg font-semibold transition-colors duration-150 text-base">Названию
-                    <svg data-sort-icon="title"
-                        class="sort-arrow-icon w-4 h-4 inline ml-1 align-text-top transform transition-transform"
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-                    </svg>
-                </button>
-
-                <button data-sort="author" data-order="asc"
-                    class="sort-btn px-4 py-2 rounded-lg font-semibold transition-colors duration-150 text-base">Автору
-                    <svg data-sort-icon="author"
-                        class="sort-arrow-icon w-4 h-4 inline ml-1 align-text-top transform transition-transform"
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-                    </svg>
-                </button>
-
-                <button data-sort="length" data-order="asc"
-                    class="sort-btn px-4 py-2 rounded-lg font-semibold transition-colors duration-150 text-base">Длине
-                    <svg data-sort-icon="length"
-                        class="sort-arrow-icon w-4 h-4 inline ml-1 align-text-top transform transition-transform"
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <div id="poems-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        </div>
-
-        <p id="no-results-message" class="text-center text-xl text-gray-500 mt-10 hidden">
-            По вашему запросу стихов не найдено. 😔
-        </p>
+    {% if current_user %}
+    <div class="flex flex-nowrap overflow-x-auto gap-3 justify-center mt-4 p-2 -m-2">
+        <button data-filter="unfiltered" id="tab-unfiltered"
+            class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150 {% if not show_all_tab %}hidden{% endif %}">Все
+            (<span id="count-all">0</span>)</button>
+        <button data-filter="unread" id="tab-unread"
+            class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150 active">Непрочитанные
+            (<span id="count-unread">0</span>)</button>
+        <button data-filter="read" id="tab-read"
+            class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150">Прочитанные
+            (<span id="count-read">0</span>)</button>
     </div>
+    {% else %}
+    <div class="flex flex-nowrap overflow-x-auto gap-3 justify-center mt-4 p-2 -m-2">
+        <button data-filter="unfiltered" id="tab-unfiltered-public"
+            class="tab flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-colors duration-150 active">Все
+            (<span id="count-all">0</span>)</button>
+    </div>
+    {% endif %}
 
-    <div id="poem-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 transform scale-95 transition-transform duration-300"
-            id="modal-content">
-            <h2 id="modal-title" class="text-3xl font-bold mb-2 text-gray-900 break-words"></h2>
-            <p id="modal-author" class="text-lg text-gray-600 mb-4 italic"></p>
-            <div class="h-px bg-gray-200 mb-6"></div>
+    <div id="sort-buttons-container" class="flex flex-wrap gap-2 justify-center mt-4 pt-4 border-t border-gray-100">
+        <span class="font-medium text-gray-700 mr-2 self-center">Сортировать по:</span>
+        <button data-sort="title" data-order="asc"
+            class="sort-btn active px-4 py-2 rounded-lg font-semibold transition-colors duration-150 text-base">Названию
+            <svg data-sort-icon="title"
+                class="sort-arrow-icon w-4 h-4 inline ml-1 align-text-top transform transition-transform"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+            </svg>
+        </button>
+        <button data-sort="author" data-order="asc"
+            class="sort-btn px-4 py-2 rounded-lg font-semibold transition-colors duration-150 text-base">Автору
+            <svg data-sort-icon="author"
+                class="sort-arrow-icon w-4 h-4 inline ml-1 align-text-top transform transition-transform"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+            </svg>
+        </button>
+        <button data-sort="length" data-order="asc"
+            class="sort-btn px-4 py-2 rounded-lg font-semibold transition-colors duration-150 text-base">Длине
+            <svg data-sort-icon="length"
+                class="sort-arrow-icon w-4 h-4 inline ml-1 align-text-top transform transition-transform"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+            </svg>
+        </button>
+    </div>
+</div>
 
-            <pre id="modal-text" class="poem mb-6 text-base text-gray-800"></pre>
+<div id="poems-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 
-            {% if current_user %}
-            <div class="flex flex-wrap justify-between items-center pt-4 border-t border-gray-100 space-y-3 sm:space-y-0">
+<p id="no-results-message" class="text-center text-xl text-gray-500 mt-10 hidden">
+    По вашему запросу стихов не найдено. 😔
+</p>
+{% endblock %}
 
-                <div class="flex space-x-3">
-                    <div id="read-button-wrapper" class="hidden">
-                        <button id="toggle-read-btn"
-                            class="flex items-center space-x-2 px-4 py-2 rounded-full font-semibold transition-colors duration-200 shadow-md text-sm">
-                            <svg id="read-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span id="read-status-text"></span>
-                        </button>
-                    </div>
+{% block modals %}
+<div id="poem-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 transform scale-95 transition-transform duration-300"
+        id="modal-content">
+        <h2 id="modal-title" class="text-3xl font-bold mb-2 text-gray-900 break-words"></h2>
+        <p id="modal-author" class="text-lg text-gray-600 mb-4 italic"></p>
+        <div class="h-px bg-gray-200 mb-6"></div>
+        <pre id="modal-text" class="poem mb-6 text-base text-gray-800"></pre>
 
-                    <div id="pin-button-wrapper" class="hidden">
-                        <button id="toggle-pin-btn"
-                            class="flex items-center space-x-2 px-4 py-2 rounded-full font-semibold transition-colors duration-200 shadow-md text-sm">
-                            <svg id="pin-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" />
-                            </svg>
-                            <span id="pin-status-text"></span>
-                        </button>
-                    </div>
+        {% if current_user %}
+        <div class="flex flex-wrap justify-between items-center pt-4 border-t border-gray-100 space-y-3 sm:space-y-0">
+            <div class="flex space-x-3">
+                <div id="read-button-wrapper" class="hidden">
+                    <button id="toggle-read-btn"
+                        class="flex items-center space-x-2 px-4 py-2 rounded-full font-semibold transition-colors duration-200 shadow-md text-sm">
+                        <svg id="read-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span id="read-status-text"></span>
+                    </button>
+                </div>
+                <div id="pin-button-wrapper" class="hidden">
+                    <button id="toggle-pin-btn"
+                        class="flex items-center space-x-2 px-4 py-2 rounded-full font-semibold transition-colors duration-200 shadow-md text-sm">
+                        <svg id="pin-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" />
+                        </svg>
+                        <span id="pin-status-text"></span>
+                    </button>
                 </div>
             </div>
-            {% endif %}
-
-            <button id="close-modal-btn"
-                class="absolute top-4 right-4 text-gray-500 hover:text-gray-900 transition-colors duration-150">
-                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
         </div>
+        {% endif %}
+
+        <button id="close-modal-btn"
+            class="absolute top-4 right-4 text-gray-500 hover:text-gray-900 transition-colors duration-150">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
     </div>
+</div>
+{% endblock %}
 
-    <script>
-        // ВАЖНО: Jinja2 вставляет сюда данные из Python!
-        const allData = {{ poems | tojson }};
+{% block scripts %}
+<script>
+    // ВАЖНО: Jinja2 вставляет сюда данные из Python!
+    const allData = {{ poems | tojson }};
 
-        const readPoemsTitles = new Set({{ read_poems | tojson | safe }});
-        let pinnedPoemTitle = {{ pinned_title | tojson | safe }};
-        const isAuthenticated = {{ 'true' if current_user else 'false' }};
-        const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
-        const showAllTabSetting = {{ 'true' if current_user and current_user.show_all_tab else 'false' }};
+    const readPoemsTitles = new Set({{ read_poems | tojson | safe }});
+    let pinnedPoemTitle = {{ pinned_title | tojson | safe }};
+    const isAuthenticated = {{ 'true' if current_user else 'false' }};
+    const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
+    const showAllTabSetting = {{ 'true' if current_user and current_user.show_all_tab else 'false' }};
 
-        // --- 1. ЛОГИКА ФИЛЬТРАЦИИ И СОРТИРОВКИ ---
-        let allPoems = [];
-        let currentPoem = null;
-        let currentFilter = isAuthenticated ? 'unread' : 'unfiltered';
-        let currentSort = { type: 'title', order: 'asc' };
+    // --- 1. ЛОГИКА ФИЛЬТРАЦИИ И СОРТИРОВКИ ---
+    let allPoems = [];
+    let currentPoem = null;
+    let currentFilter = isAuthenticated ? 'unread' : 'unfiltered';
+    let currentSort = { type: 'title', order: 'asc' };
 
-        const poemsContainer = document.getElementById('poems-container');
-        const searchInput = document.getElementById('search-input');
-        const sortButtonsContainer = document.getElementById('sort-buttons-container');
-        const tabButtons = document.querySelectorAll('.tab');
-        const noResultsMessage = document.getElementById('no-results-message');
-        const modal = document.getElementById('poem-modal');
-        const closeModalBtn = document.getElementById('close-modal-btn');
+    const poemsContainer = document.getElementById('poems-container');
+    const searchInput = document.getElementById('search-input');
+    const sortButtonsContainer = document.getElementById('sort-buttons-container');
+    const tabButtons = document.querySelectorAll('.tab');
+    const noResultsMessage = document.getElementById('no-results-message');
+    const modal = document.getElementById('poem-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
 
-        // --- ФУНКЦИИ ---
-        const createPoemCard = (poem) => {
+    // --- ФУНКЦИИ ---
+    const createPoemCard = (poem) => {
+        const isRead = readPoemsTitles.has(poem.title);
+        const isPinned = poem.title === pinnedPoemTitle;
+
+        const card = document.createElement('div');
+        let borderClass = 'border-gray-200';
+        if (isPinned) {
+            borderClass = 'border-orange-500 ring-2 ring-orange-200';
+        } else if (isRead) {
+            borderClass = 'border-sky-100';
+        }
+
+        card.className = `poem-card cursor-pointer p-6 bg-white rounded-xl shadow-lg border-2 ${borderClass} hover:border-sky-500`;
+        card.innerHTML = `
+            <h3 class="text-xl font-bold text-gray-900 mb-1 break-words">${poem.title}</h3>
+            <p class="text-sm text-gray-500 mb-3 italic">Автор: ${poem.author}</p>
+            <p class="text-sm text-gray-500">${poem.line_count} строк</p>
+            ${isAuthenticated ? `
+            <div class="flex flex-wrap gap-2 mt-2">
+                <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${isRead ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-700'}">
+                    ${isRead ? 'Прочитано' : 'Не прочитано'}
+                </span>
+                ${isPinned ? `
+                <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-orange-500 text-white flex items-center">
+                    <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" /></svg>
+                    Изучаю
+                </span>` : ''}
+            </div>
+            ` : ''}
+        `;
+        card.onclick = () => openModal(poem.title);
+        return card;
+    };
+
+    const filterAndRender = () => {
+        const searchText = searchInput.value.toLowerCase().trim();
+        let filteredPoems = allPoems.filter(poem => {
+            const matchesSearch = poem.title.toLowerCase().includes(searchText) ||
+                poem.author.toLowerCase().includes(searchText) ||
+                poem.text.toLowerCase().includes(searchText);
+            if (!matchesSearch) return false;
+            if (!isAuthenticated) return true;
             const isRead = readPoemsTitles.has(poem.title);
-            const isPinned = poem.title === pinnedPoemTitle;
+            if (currentFilter === 'unread') return !isRead;
+            if (currentFilter === 'read') return isRead;
+            return true;
+        });
 
-            const card = document.createElement('div');
-            let borderClass = 'border-gray-200';
-            if (isPinned) {
-                borderClass = 'border-orange-500 ring-2 ring-orange-200';
-            } else if (isRead) {
-                borderClass = 'border-sky-100';
+        let pinnedPoem = null;
+        let finalPoems = [];
+        if (isAuthenticated && pinnedPoemTitle) {
+            pinnedPoem = filteredPoems.find(p => p.title === pinnedPoemTitle);
+            if (pinnedPoem) {
+                filteredPoems = filteredPoems.filter(p => p.title !== pinnedPoemTitle);
             }
+        }
 
-            card.className = `poem-card cursor-pointer p-6 bg-white rounded-xl shadow-lg border-2 ${borderClass} hover:border-sky-500`;
-            card.innerHTML = `
-                <h3 class="text-xl font-bold text-gray-900 mb-1 break-words">${poem.title}</h3>
-                <p class="text-sm text-gray-500 mb-3 italic">Автор: ${poem.author}</p>
-                <p class="text-sm text-gray-500">${poem.line_count} строк</p>
-                ${isAuthenticated ? `
-                <div class="flex flex-wrap gap-2 mt-2">
-                    <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${isRead ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-700'}">
-                        ${isRead ? 'Прочитано' : 'Не прочитано'}
-                    </span>
-                    ${isPinned ? `
-                    <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-orange-500 text-white flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" /></svg>
-                        Изучаю
-                    </span>` : ''}
-                </div>
-                ` : ''}
-            `;
-            card.onclick = () => openModal(poem.title);
-            return card;
-        };
-
-        const filterAndRender = () => {
-            const searchText = searchInput.value.toLowerCase().trim();
-            let filteredPoems = allPoems.filter(poem => {
-                const matchesSearch = poem.title.toLowerCase().includes(searchText) ||
-                    poem.author.toLowerCase().includes(searchText) ||
-                    poem.text.toLowerCase().includes(searchText);
-                if (!matchesSearch) return false;
-                if (!isAuthenticated) return true;
-                const isRead = readPoemsTitles.has(poem.title);
-                if (currentFilter === 'unread') return !isRead;
-                if (currentFilter === 'read') return isRead;
-                return true;
-            });
-
-            let pinnedPoem = null;
-            let finalPoems = [];
-            if (isAuthenticated && pinnedPoemTitle) {
-                pinnedPoem = filteredPoems.find(p => p.title === pinnedPoemTitle);
-                if (pinnedPoem) {
-                    filteredPoems = filteredPoems.filter(p => p.title !== pinnedPoemTitle);
-                }
-            }
-
-            filteredPoems.sort((a, b) => {
-                let valA, valB;
-                if (currentSort.type === 'length') {
-                    valA = a.line_count;
-                    valB = b.line_count;
-                } else if (currentSort.type === 'author') {
-                    valA = a.author.toLowerCase();
-                    valB = b.author.toLowerCase();
-                } else {
-                    valA = a.title.toLowerCase();
-                    valB = b.title.toLowerCase();
-                }
-                if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
-                if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
-                return 0;
-            });
-
-            if (pinnedPoem) finalPoems.push(pinnedPoem);
-            finalPoems.push(...filteredPoems);
-
-            poemsContainer.innerHTML = '';
-            if (finalPoems.length === 0) {
-                noResultsMessage.classList.remove('hidden');
+        filteredPoems.sort((a, b) => {
+            let valA, valB;
+            if (currentSort.type === 'length') {
+                valA = a.line_count;
+                valB = b.line_count;
+            } else if (currentSort.type === 'author') {
+                valA = a.author.toLowerCase();
+                valB = b.author.toLowerCase();
             } else {
-                noResultsMessage.classList.add('hidden');
-                finalPoems.forEach(poem => {
-                    poemsContainer.appendChild(createPoemCard(poem));
-                });
+                valA = a.title.toLowerCase();
+                valB = b.title.toLowerCase();
             }
-        };
+            if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
+            return 0;
+        });
 
-        const updateTabCounts = () => {
-            if (!isAuthenticated) {
-                document.getElementById('count-all').textContent = allPoems.length;
-                return;
-            }
-            const readCount = allPoems.filter(poem => readPoemsTitles.has(poem.title)).length;
-            const unreadCount = allPoems.length - readCount;
+        if (pinnedPoem) finalPoems.push(pinnedPoem);
+        finalPoems.push(...filteredPoems);
+
+        poemsContainer.innerHTML = '';
+        if (finalPoems.length === 0) {
+            noResultsMessage.classList.remove('hidden');
+        } else {
+            noResultsMessage.classList.add('hidden');
+            finalPoems.forEach(poem => {
+                poemsContainer.appendChild(createPoemCard(poem));
+            });
+        }
+    };
+
+    const updateTabCounts = () => {
+        if (!isAuthenticated) {
             document.getElementById('count-all').textContent = allPoems.length;
-            document.getElementById('count-unread').textContent = unreadCount;
-            document.getElementById('count-read').textContent = readCount;
-        };
+            return;
+        }
+        const readCount = allPoems.filter(poem => readPoemsTitles.has(poem.title)).length;
+        const unreadCount = allPoems.length - readCount;
+        document.getElementById('count-all').textContent = allPoems.length;
+        document.getElementById('count-unread').textContent = unreadCount;
+        document.getElementById('count-read').textContent = readCount;
+    };
 
-        const openModal = (title) => {
-            currentPoem = allPoems.find(p => p.title === title);
-            if (!currentPoem) {
-                console.error('Стих не найден:', title);
-                return;
-            }
+    const openModal = (title) => {
+        currentPoem = allPoems.find(p => p.title === title);
+        if (!currentPoem) {
+            console.error('Стих не найден:', title);
+            return;
+        }
 
-            document.getElementById('modal-title').textContent = currentPoem.title;
-            document.getElementById('modal-author').textContent = `Автор: ${currentPoem.author}`;
-            document.getElementById('modal-text').textContent = currentPoem.text;
+        document.getElementById('modal-title').textContent = currentPoem.title;
+        document.getElementById('modal-author').textContent = `Автор: ${currentPoem.author}`;
+        document.getElementById('modal-text').textContent = currentPoem.text;
 
-            if (isAuthenticated) {
-                const isRead = readPoemsTitles.has(title);
-                const isPinned = title === pinnedPoemTitle;
+        if (isAuthenticated) {
+            const isRead = readPoemsTitles.has(title);
+            const isPinned = title === pinnedPoemTitle;
 
-                updateModalReadButton(isRead);
-                updateModalPinButton(isPinned);
+            updateModalReadButton(isRead);
+            updateModalPinButton(isPinned);
 
-                document.getElementById('read-button-wrapper').classList.remove('hidden');
-                document.getElementById('pin-button-wrapper').classList.remove('hidden');
+            document.getElementById('read-button-wrapper').classList.remove('hidden');
+            document.getElementById('pin-button-wrapper').classList.remove('hidden');
 
-                // Устанавливаем обработчики через onclick (более надежно)
-                const readBtn = document.getElementById('toggle-read-btn');
-                const pinBtn = document.getElementById('toggle-pin-btn');
-                
-                if (readBtn) {
-                    readBtn.onclick = handleToggleRead;
-                }
-                if (pinBtn) {
-                    pinBtn.onclick = handleTogglePin;
-                }
-
-            } else {
-                document.getElementById('read-button-wrapper').classList.add('hidden');
-                document.getElementById('pin-button-wrapper').classList.add('hidden');
-            }
-
-            modal.classList.add('open');
-        };
-
-        const closeModal = () => {
-            modal.classList.remove('open');
-            currentPoem = null;
-        };
-
-        const updateModalReadButton = (isRead) => {
-            const toggleReadBtn = document.getElementById('toggle-read-btn');
-            const readStatusText = document.getElementById('read-status-text');
-            if (!toggleReadBtn) return;
-
-            if (isRead) {
-                toggleReadBtn.classList.remove('bg-gray-100', 'text-gray-700');
-                toggleReadBtn.classList.add('bg-sky-500', 'text-white');
-                readStatusText.textContent = 'Прочитано';
-            } else {
-                toggleReadBtn.classList.remove('bg-sky-500', 'text-white');
-                toggleReadBtn.classList.add('bg-gray-100', 'text-gray-700');
-                readStatusText.textContent = 'Отметить как прочитанное';
-            }
-        };
-
-        const updateModalPinButton = (isPinned) => {
-            const togglePinBtn = document.getElementById('toggle-pin-btn');
-            const pinStatusText = document.getElementById('pin-status-text');
-            if (!togglePinBtn) return;
-
-            if (isPinned) {
-                togglePinBtn.classList.remove('bg-gray-100', 'text-gray-700');
-                togglePinBtn.classList.add('bg-orange-500', 'text-white');
-                pinStatusText.textContent = 'Изучаемый стих';
-            } else {
-                togglePinBtn.classList.remove('bg-orange-500', 'text-white');
-                togglePinBtn.classList.add('bg-gray-100', 'text-gray-700');
-                pinStatusText.textContent = 'Закрепить для изучения';
-            }
-        };
-
-        const handleTogglePin = async () => {
-            if (!currentPoem) return;
-
-            const url = `/toggle_pin`;
-            console.log('Toggle pin URL:', url, 'Title:', currentPoem.title);
+            // Устанавливаем обработчики через onclick (более надежно)
+            const readBtn = document.getElementById('toggle-read-btn');
+            const pinBtn = document.getElementById('toggle-pin-btn');
             
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ title: currentPoem.title })
-                });
-
-                console.log('Response status:', response.status);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('Response data:', data);
-                    
-                    pinnedPoemTitle = data.pinned_title;
-                    updateModalPinButton(currentPoem.title === pinnedPoemTitle);
-                    updateTabCounts();
-                    filterAndRender();
-                    
-                    // Показываем сообщение об успехе
-                    alert(`Стих "${currentPoem.title}" ${data.action === 'pinned' ? 'закреплен для изучения' : 'откреплен'}`);
-                    
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    console.error('Ошибка при переключении закрепления:', errorData);
-                    alert('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'));
-                }
-            } catch (error) {
-                console.error('Сетевая ошибка при переключении закрепления:', error);
-                alert('Сетевая ошибка. Проверьте подключение к интернету.');
+            if (readBtn) {
+                readBtn.onclick = handleToggleRead;
             }
-        };
+            if (pinBtn) {
+                pinBtn.onclick = handleTogglePin;
+            }
 
-        // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
-        window.onload = () => {
-            allPoems = allData;
+        } else {
+            document.getElementById('read-button-wrapper').classList.add('hidden');
+            document.getElementById('pin-button-wrapper').classList.add('hidden');
+        }
 
-            // Настройка иконок сортировки
+        modal.classList.add('open');
+    };
+
+    const closeModal = () => {
+        modal.classList.remove('open');
+        currentPoem = null;
+    };
+
+    const updateModalReadButton = (isRead) => {
+        const toggleReadBtn = document.getElementById('toggle-read-btn');
+        const readStatusText = document.getElementById('read-status-text');
+        if (!toggleReadBtn) return;
+
+        if (isRead) {
+            toggleReadBtn.classList.remove('bg-gray-100', 'text-gray-700');
+            toggleReadBtn.classList.add('bg-sky-500', 'text-white');
+            readStatusText.textContent = 'Прочитано';
+        } else {
+            toggleReadBtn.classList.remove('bg-sky-500', 'text-white');
+            toggleReadBtn.classList.add('bg-gray-100', 'text-gray-700');
+            readStatusText.textContent = 'Отметить как прочитанное';
+        }
+    };
+
+    const updateModalPinButton = (isPinned) => {
+        const togglePinBtn = document.getElementById('toggle-pin-btn');
+        const pinStatusText = document.getElementById('pin-status-text');
+        if (!togglePinBtn) return;
+
+        if (isPinned) {
+            togglePinBtn.classList.remove('bg-gray-100', 'text-gray-700');
+            togglePinBtn.classList.add('bg-orange-500', 'text-white');
+            pinStatusText.textContent = 'Изучаемый стих';
+        } else {
+            togglePinBtn.classList.remove('bg-orange-500', 'text-white');
+            togglePinBtn.classList.add('bg-gray-100', 'text-gray-700');
+            pinStatusText.textContent = 'Закрепить для изучения';
+        }
+    };
+
+    const handleToggleRead = async () => {
+        if (!currentPoem) return;
+
+        const url = `/toggle_read`;
+        console.log('Toggle read URL:', url, 'Title:', currentPoem.title);
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ title: currentPoem.title })
+            });
+
+            console.log('Response status:', response.status);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (data.action === 'marked') {
+                    readPoemsTitles.add(currentPoem.title);
+                } else {
+                    readPoemsTitles.delete(currentPoem.title);
+                }
+                
+                updateModalReadButton(readPoemsTitles.has(currentPoem.title));
+                updateTabCounts();
+                filterAndRender();
+                
+                // Показываем сообщение об успехе
+                alert(`Стих "${currentPoem.title}" ${data.action === 'marked' ? 'отмечен как прочитанный' : 'удален из прочитанных'}`);
+                
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Ошибка при переключении статуса прочтения:', errorData);
+                alert('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'));
+            }
+        } catch (error) {
+            console.error('Сетевая ошибка при переключении статуса:', error);
+            alert('Сетевая ошибка. Проверьте подключение к интернету.');
+        }
+    };
+
+    const handleTogglePin = async () => {
+        if (!currentPoem) return;
+
+        const url = `/toggle_pin`;
+        console.log('Toggle pin URL:', url, 'Title:', currentPoem.title);
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ title: currentPoem.title })
+            });
+
+            console.log('Response status:', response.status);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                pinnedPoemTitle = data.pinned_title;
+                updateModalPinButton(currentPoem.title === pinnedPoemTitle);
+                updateTabCounts();
+                filterAndRender();
+                
+                // Показываем сообщение об успехе
+                alert(`Стих "${currentPoem.title}" ${data.action === 'pinned' ? 'закреплен для изучения' : 'откреплен'}`);
+                
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Ошибка при переключении закрепления:', errorData);
+                alert('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'));
+            }
+        } catch (error) {
+            console.error('Сетевая ошибка при переключении закрепления:', error);
+            alert('Сетевая ошибка. Проверьте подключение к интернету.');
+        }
+    };
+
+    // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
+    window.onload = () => {
+        allPoems = allData;
+
+        // Настройка иконок сортировки
+        const allIcons = document.querySelectorAll('.sort-arrow-icon');
+        allIcons.forEach(icon => {
+            if (icon.dataset.sortIcon === currentSort.type) {
+                icon.style.opacity = 1;
+                icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
+            } else {
+                icon.style.opacity = 0;
+            }
+        });
+
+        updateTabCounts();
+        filterAndRender();
+
+        // Обработчики вкладок
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const currentActive = document.querySelector('.tab.active');
+                if (currentActive) currentActive.classList.remove('active');
+                button.classList.add('active');
+                currentFilter = button.dataset.filter;
+                filterAndRender();
+            });
+        });
+
+        // Закрытие модального окна
+        closeModalBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) closeModal();
+        });
+
+        // Поиск
+        searchInput.addEventListener('input', filterAndRender);
+
+        // Сортировка
+        sortButtonsContainer.addEventListener('click', (e) => {
+            const targetButton = e.target.closest('button.sort-btn');
+            if (!targetButton) return;
+
+            const newSortType = targetButton.dataset.sort;
+            if (newSortType === currentSort.type) {
+                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.type = newSortType;
+                currentSort.order = 'asc';
+            }
+
+            targetButton.dataset.order = currentSort.order;
+            const activeSort = sortButtonsContainer.querySelector('.active');
+            if (activeSort) activeSort.classList.remove('active');
+            targetButton.classList.add('active');
+
             const allIcons = document.querySelectorAll('.sort-arrow-icon');
             allIcons.forEach(icon => {
                 if (icon.dataset.sortIcon === currentSort.type) {
@@ -464,72 +461,20 @@
                 }
             });
 
-            updateTabCounts();
             filterAndRender();
+        });
 
-            // Обработчики вкладок
-            tabButtons.forEach(button => {
-                button.addEventListener('click', () => {
-                    const currentActive = document.querySelector('.tab.active');
-                    if (currentActive) currentActive.classList.remove('active');
-                    button.classList.add('active');
-                    currentFilter = button.dataset.filter;
-                    filterAndRender();
-                });
-            });
-
-            // Закрытие модального окна
-            closeModalBtn.addEventListener('click', closeModal);
-            modal.addEventListener('click', (event) => {
-                if (event.target === modal) closeModal();
-            });
-
-            // Поиск
-            searchInput.addEventListener('input', filterAndRender);
-
-            // Сортировка
-            sortButtonsContainer.addEventListener('click', (e) => {
-                const targetButton = e.target.closest('button.sort-btn');
-                if (!targetButton) return;
-
-                const newSortType = targetButton.dataset.sort;
-                if (newSortType === currentSort.type) {
-                    currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
-                } else {
-                    currentSort.type = newSortType;
-                    currentSort.order = 'asc';
-                }
-
-                targetButton.dataset.order = currentSort.order;
-                const activeSort = sortButtonsContainer.querySelector('.active');
-                if (activeSort) activeSort.classList.remove('active');
-                targetButton.classList.add('active');
-
-                const allIcons = document.querySelectorAll('.sort-arrow-icon');
-                allIcons.forEach(icon => {
-                    if (icon.dataset.sortIcon === currentSort.type) {
-                        icon.style.opacity = 1;
-                        icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
-                    } else {
-                        icon.style.opacity = 0;
-                    }
-                });
-
-                filterAndRender();
-            });
-
-            // Escape для закрытия модального окна
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape' && modal.classList.contains('open')) {
-                    closeModal();
-                }
-            });
-            
-            console.log('Script loaded successfully');
-            console.log('Is authenticated:', isAuthenticated);
-            console.log('Read poems:', Array.from(readPoemsTitles));
-            console.log('Pinned poem:', pinnedPoemTitle);
-        };
-    </script>
-</body>
-</html>
+        // Escape для закрытия модального окна
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && modal.classList.contains('open')) {
+                closeModal();
+            }
+        });
+        
+        console.log('Script loaded successfully');
+        console.log('Is authenticated:', isAuthenticated);
+        console.log('Read poems:', Array.from(readPoemsTitles));
+        console.log('Pinned poem:', pinnedPoemTitle);
+    };
+</script>
+{% endblock %}
