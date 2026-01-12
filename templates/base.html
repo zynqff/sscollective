@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{% block title %}Сборник Стихов{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --accent-color: #38bdf8;
+            --text-color: #374151;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb;
+        }
+
+        pre.poem {
+            white-space: pre-wrap;
+            line-height: 1.6;
+            font-family: inherit;
+            font-size: 1rem;
+            color: var(--text-color);
+            margin: 0;
+        }
+
+        .modal {
+            transition: opacity 0.3s ease-in-out;
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .modal.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .tab.active,
+        .sort-btn.active {
+            @apply bg-sky-500 text-white shadow-md;
+        }
+
+        .tab:not(.active),
+        .sort-btn:not(.active) {
+            @apply bg-white text-gray-700 hover:bg-gray-100;
+        }
+
+        .poem-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .poem-card:hover {
+            transform: translateY(-2px);
+            @apply shadow-lg;
+        }
+
+        .sort-arrow-icon {
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            opacity: 0;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen">
+    {% block header %}
+    <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="flex flex-col sm:flex-row justify-between items-center py-4 mb-8 border-b border-gray-200">
+            <h1 class="text-4xl font-extrabold text-gray-900 mb-4 sm:mb-0">{% block page_title %}Сборник Стихов{% endblock %}</h1>
+            <nav class="flex items-center space-x-4">
+                {% if current_user %}
+                    {% if current_user.is_admin %}
+                    <span class="text-red-600 font-bold">Администратор</span>
+                    <a href="{{ request.url_for('admin_panel') }}" class="text-red-600 hover:text-red-700 font-semibold">Панель админа</a>
+                    {% endif %}
+                    <a href="{{ request.url_for('profile_get') }}" class="text-gray-700 hover:text-sky-600 font-semibold">Профиль ({{ current_user.username }})</a>
+                    <a href="{{ request.url_for('logout') }}" class="text-gray-700 hover:text-sky-600 font-semibold">Выйти</a>
+                {% else %}
+                    <a href="{{ request.url_for('login_get') }}" class="text-sky-500 hover:text-sky-600 font-semibold">Войти</a>
+                    <a href="{{ request.url_for('register_get') }}" class="text-sky-500 hover:text-sky-600 font-semibold">Регистрация</a>
+                {% endif %}
+            </nav>
+        </header>
+    {% endblock %}
+    
+    {% block content %}{% endblock %}
+    
+    {% block modals %}{% endblock %}
+    
+    {% block scripts %}{% endblock %}
+    </div>
+</body>
+      </html>
