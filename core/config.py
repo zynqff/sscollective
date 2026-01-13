@@ -7,6 +7,9 @@ class Settings:
     # Supabase
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+    # Gemini
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     
     # JWT
     SECRET_KEY = os.getenv("SECRET_KEY", "sUper_sEcrEt_kEy_fOr_pRojeCt_2024_fAstApi")

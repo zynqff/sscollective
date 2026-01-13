@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Импортируем роутеры
-from routers import auth, users, poems, admin
+from routers import auth, users, poems, admin, ai
 from core.database import get_db, supabase
 
 app = FastAPI(title="Сборник Стихов")
@@ -22,6 +22,7 @@ app.include_router(auth.router, tags=["auth"])
 app.include_router(users.router, tags=["users"])
 app.include_router(poems.router, tags=["poems"])
 app.include_router(admin.router, tags=["admin"])
+app.include_router(ai.router, tags=["ai"])
 
 @app.get("/")
 async def root():

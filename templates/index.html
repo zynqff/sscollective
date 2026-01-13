@@ -91,7 +91,7 @@
                         <span id="pin-status-text"></span>
                     </button>
                 </div>
-                <div id="ai-button-wrapper" class="hidden">
+                <div id="ai-button-wrapper">
                     <button id="ai-btn"
                         class="flex items-center space-x-2 px-4 py-2 rounded-full font-semibold transition-colors duration-200 shadow-md text-sm bg-purple-500 text-white hover:bg-purple-600">
                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -112,7 +112,38 @@
         </button>
     </div>
 </div>
+
+<div id="ai-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col p-6 sm:p-8" id="ai-modal-content">
+        <div id="ai-key-entry" class="hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Доступ к AI-функции</h2>
+            <p class="text-gray-600 mb-4">У вас нет доступа к этой функции. Введите ключ доступа, полученный от администратора.</p>
+            <form id="ai-key-form">
+                <input type="text" id="ai-key-input" placeholder="Введите ключ..." class="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4">
+                <button type="submit" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-2 rounded-lg">Проверить ключ</button>
+            </form>
+        </div>
+
+        <div id="ai-chat-interface" class="hidden h-full flex flex-col">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Чат с AI</h2>
+            <div id="ai-chat-history" class="flex-grow bg-gray-100 rounded-lg p-4 overflow-y-auto mb-4">
+                <!-- Chat messages will be here -->
+            </div>
+            <form id="ai-chat-form">
+                <div class="flex">
+                    <input type="text" id="ai-chat-input" placeholder="Спросите что-нибудь о стихотворении..." class="flex-grow px-4 py-2 border border-gray-300 rounded-l-lg">
+                    <button type="submit" class="bg-purple-500 hover:bg-purple-600 text-white font-semibold px-6 rounded-r-lg">Отправить</button>
+                </div>
+            </form>
+        </div>
+        
+        <button id="close-ai-modal-btn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-900">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+    </div>
+</div>
 {% endblock %}
+
 
 {% block scripts %}
 <script>
@@ -274,10 +305,7 @@
                 pinBtn.onclick = handleTogglePin;
             }
             if (aiBtn) {
-                aiBtn.onclick = () => {
-                    console.log('AI button clicked for poem:', currentPoem.title);
-                    showNotification(`AI-функция для "${currentPoem.title}" еще не реализована.`, 'info');
-                };
+                aiBtn.onclick = openAiModal;
             }
 
         } else {
@@ -292,6 +320,81 @@
     const closeModal = () => {
         modal.classList.remove('open');
         currentPoem = null;
+    };
+
+    let hasAiAccess = isAdmin; // Admins have access by default
+    const aiModal = document.getElementById('ai-modal');
+
+    const openAiModal = () => {
+        aiModal.classList.add('open');
+        if (hasAiAccess) {
+            document.getElementById('ai-chat-interface').classList.remove('hidden');
+            document.getElementById('ai-key-entry').classList.add('hidden');
+        } else {
+            document.getElementById('ai-key-entry').classList.remove('hidden');
+            document.getElementById('ai-chat-interface').classList.add('hidden');
+        }
+    };
+
+    const closeAiModal = () => {
+        aiModal.classList.remove('open');
+    };
+
+    const handleAiKeySubmit = async (event) => {
+        event.preventDefault();
+        const key = document.getElementById('ai-key-input').value;
+        if (!key) return;
+
+        // This endpoint doesn't exist yet, so this will fail.
+        // I will create it in routers/ai.py
+        try {
+            const response = await fetch('/ai/verify_key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key })
+            });
+
+            if (response.ok) {
+                hasAiAccess = true;
+                openAiModal();
+                showNotification('Ключ принят! Доступ предоставлен.', 'success');
+            } else {
+                const error = await response.json();
+                showNotification(`Ошибка: ${error.detail}`, 'error');
+            }
+        } catch (err) {
+            showNotification('Сетевая ошибка.', 'error');
+        }
+    };
+
+    const handleAiChatSubmit = async (event) => {
+        event.preventDefault();
+        const input = document.getElementById('ai-chat-input');
+        const prompt = input.value;
+        if (!prompt) return;
+
+        const chatHistory = document.getElementById('ai-chat-history');
+        const userMessage = document.createElement('div');
+        userMessage.className = 'text-right mb-2';
+        userMessage.innerHTML = `<span class="bg-sky-500 text-white rounded-lg px-3 py-1 inline-block">${prompt}</span>`;
+        chatHistory.appendChild(userMessage);
+        input.value = '';
+        
+        try {
+            const response = await fetch(`/ai/chat?prompt=${encodeURIComponent(prompt)}`, { method: 'POST' });
+            if (response.ok) {
+                const data = await response.json();
+                const aiMessage = document.createElement('div');
+                aiMessage.className = 'text-left mb-2';
+                aiMessage.innerHTML = `<span class="bg-gray-200 text-gray-800 rounded-lg px-3 py-1 inline-block">${data.response}</span>`;
+                chatHistory.appendChild(aiMessage);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            } else {
+                 showNotification('Ошибка ответа от AI.', 'error');
+            }
+        } catch (err) {
+            showNotification('Сетевая ошибка.', 'error');
+        }
     };
 
     const updateModalReadButton = (isRead) => {
@@ -486,7 +589,17 @@
             if (event.key === 'Escape' && modal.classList.contains('open')) {
                 closeModal();
             }
+            if (event.key === 'Escape' && aiModal.classList.contains('open')) {
+                closeAiModal();
+            }
         });
+
+        document.getElementById('close-ai-modal-btn').addEventListener('click', closeAiModal);
+        aiModal.addEventListener('click', (event) => {
+            if (event.target === aiModal) closeAiModal();
+        });
+        document.getElementById('ai-key-form').addEventListener('submit', handleAiKeySubmit);
+        document.getElementById('ai-chat-form').addEventListener('submit', handleAiChatSubmit);
         
         console.log('Script loaded successfully');
         console.log('Is authenticated:', isAuthenticated);
