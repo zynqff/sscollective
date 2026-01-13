@@ -27,10 +27,7 @@ async def read_root(
 
     read_poems = []
     if current_user:
-        if AuthService.is_virtual_admin(current_user.get('username')):
-            read_poems_json = []
-        else:
-            read_poems_json = current_user.get('read_poems_json')
+        read_poems_json = current_user.get('read_poems_json')
         read_poems = UserService.parse_read_poems_json(read_poems_json)
 
     context = {
@@ -50,9 +47,12 @@ async def toggle_read(
     db: Client = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    username = current_user.get('username')
+    
     # Проверяем, является ли пользователь виртуальным админом
-    if AuthService.is_virtual_admin(current_user.get('username')):
-        raise HTTPException(status_code=403, detail="Виртуальные администраторы не могут отмечать прочитанные стихи")
+    if AuthService.is_virtual_admin(username):
+        action = AuthService.toggle_virtual_admin_read_status(username, toggle_data.title)
+        return {"success": True, "action": action}
     
     poem_resp = db.table('poem').select('title').eq('title', toggle_data.title).execute()
     if not poem_resp.data:
@@ -71,9 +71,16 @@ async def toggle_pin(
     db: Client = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    username = current_user.get('username')
+
     # Проверяем, является ли пользователь виртуальным админом
-    if AuthService.is_virtual_admin(current_user.get('username')):
-        raise HTTPException(status_code=403, detail="Виртуальные администраторы не могут закреплять стихи")
+    if AuthService.is_virtual_admin(username):
+        action, new_pinned = AuthService.toggle_virtual_admin_pinned_poem(username, toggle_data.title)
+        return {
+            "success": True, 
+            "action": action, 
+            "pinned_title": new_pinned
+        }
     
     poem_resp = db.table('poem').select('title').eq('title', toggle_data.title).execute()
     if not poem_resp.data:

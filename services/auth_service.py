@@ -1,11 +1,15 @@
 import jwt
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from passlib.context import CryptContext
 from supabase import Client
 from core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# In-memory storage for virtual admins
+virtual_admin_read_poems: Dict[str, List[str]] = {}
+virtual_admin_pinned_poems: Dict[str, Optional[str]] = {}
 
 class AuthService:
     @staticmethod
@@ -39,11 +43,42 @@ class AuthService:
 
     @staticmethod
     def get_virtual_admin_data(username: str) -> Dict[str, Any]:
+        if username not in virtual_admin_read_poems:
+            virtual_admin_read_poems[username] = []
+        if username not in virtual_admin_pinned_poems:
+            virtual_admin_pinned_poems[username] = None
+            
         return {
             'username': username,
             'is_admin': True,
-            'read_poems_json': [],
-            'pinned_poem_title': None,
+            'read_poems_json': virtual_admin_read_poems[username],
+            'pinned_poem_title': virtual_admin_pinned_poems[username],
             'show_all_tab': False,
             'user_data': ''
-  }
+        }
+
+    @staticmethod
+    def toggle_virtual_admin_read_status(username: str, title: str) -> str:
+        """Переключает статус прочтения стиха для виртуального админа."""
+        reads = virtual_admin_read_poems.get(username, [])
+        if title in reads:
+            reads.remove(title)
+            action = 'unmarked'
+        else:
+            reads.append(title)
+            action = 'marked'
+        virtual_admin_read_poems[username] = reads
+        return action
+        
+    @staticmethod
+    def toggle_virtual_admin_pinned_poem(username: str, title: str) -> tuple[str, str]:
+        """Переключает статус изучаемого стиха для виртуального админа."""
+        current_pinned = virtual_admin_pinned_poems.get(username)
+        if current_pinned == title:
+            new_pinned = None
+            action = 'unpinned'
+        else:
+            new_pinned = title
+            action = 'pinned'
+        virtual_admin_pinned_poems[username] = new_pinned
+        return action, new_pinned

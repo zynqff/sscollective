@@ -66,6 +66,9 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg-gray-50 min-h-screen">
+    <div id="notification-container"
+        class="fixed top-0 left-1/2 -translate-x-1/2 mt-4 z-50 w-full max-w-sm space-y-2">
+    </div>
     {% block header %}
     <div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         <header class="flex flex-col sm:flex-row justify-between items-center py-4 mb-8 border-b border-gray-200">
@@ -90,7 +93,36 @@
     
     {% block modals %}{% endblock %}
     
-    {% block scripts %}{% endblock %}
+    {% block scripts %}
+    <script>
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('notification-container');
+            const notification = document.createElement('div');
+            notification.className = `p-3 rounded-lg shadow-md text-sm mb-2 opacity-0 transition-opacity duration-300`;
+
+            if (type === 'success') {
+                notification.classList.add('bg-green-500', 'text-white');
+            } else if (type === 'error') {
+                notification.classList.add('bg-red-500', 'text-white');
+            } else { // Default to info
+                notification.classList.add('bg-blue-500', 'text-white');
+            }
+            notification.textContent = message;
+
+            container.prepend(notification); // Add to top
+
+            setTimeout(() => {
+                notification.classList.add('opacity-100');
+            }, 10); // Small delay to trigger transition
+
+            setTimeout(() => {
+                notification.classList.remove('opacity-100');
+                notification.classList.add('opacity-0');
+                notification.addEventListener('transitionend', () => notification.remove());
+            }, 3000); // Remove after 3 seconds
+        }
+    </script>
+    {% endblock %}
     </div>
 </body>
       </html>

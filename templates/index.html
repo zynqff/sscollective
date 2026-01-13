@@ -91,6 +91,15 @@
                         <span id="pin-status-text"></span>
                     </button>
                 </div>
+                <div id="ai-button-wrapper" class="hidden">
+                    <button id="ai-btn"
+                        class="flex items-center space-x-2 px-4 py-2 rounded-full font-semibold transition-colors duration-200 shadow-md text-sm bg-purple-500 text-white hover:bg-purple-600">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span>AI</span>
+                    </button>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -251,10 +260,12 @@
 
             document.getElementById('read-button-wrapper').classList.remove('hidden');
             document.getElementById('pin-button-wrapper').classList.remove('hidden');
+            document.getElementById('ai-button-wrapper').classList.remove('hidden');
 
             // Устанавливаем обработчики через onclick (более надежно)
             const readBtn = document.getElementById('toggle-read-btn');
             const pinBtn = document.getElementById('toggle-pin-btn');
+            const aiBtn = document.getElementById('ai-btn');
             
             if (readBtn) {
                 readBtn.onclick = handleToggleRead;
@@ -262,10 +273,17 @@
             if (pinBtn) {
                 pinBtn.onclick = handleTogglePin;
             }
+            if (aiBtn) {
+                aiBtn.onclick = () => {
+                    console.log('AI button clicked for poem:', currentPoem.title);
+                    showNotification(`AI-функция для "${currentPoem.title}" еще не реализована.`, 'info');
+                };
+            }
 
         } else {
             document.getElementById('read-button-wrapper').classList.add('hidden');
             document.getElementById('pin-button-wrapper').classList.add('hidden');
+            document.getElementById('ai-button-wrapper').classList.add('hidden');
         }
 
         modal.classList.add('open');
@@ -341,16 +359,15 @@
                 filterAndRender();
                 
                 // Показываем сообщение об успехе
-                alert(`Стих "${currentPoem.title}" ${data.action === 'marked' ? 'отмечен как прочитанный' : 'удален из прочитанных'}`);
+                showNotification(`Стих "${currentPoem.title}" ${data.action === 'marked' ? 'отмечен как прочитанный' : 'удален из прочитанных'}`, 'success');
                 
             } else {
                 const errorData = await response.json().catch(() => ({}));
                 console.error('Ошибка при переключении статуса прочтения:', errorData);
-                alert('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'));
+                showNotification('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'), 'error');
             }
         } catch (error) {
-            console.error('Сетевая ошибка при переключении статуса:', error);
-            alert('Сетевая ошибка. Проверьте подключение к интернету.');
+            showNotification('Сетевая ошибка. Проверьте подключение к интернету.', 'error');
         }
     };
 
@@ -382,16 +399,16 @@
                 filterAndRender();
                 
                 // Показываем сообщение об успехе
-                alert(`Стих "${currentPoem.title}" ${data.action === 'pinned' ? 'закреплен для изучения' : 'откреплен'}`);
+                showNotification(`Стих "${currentPoem.title}" ${data.action === 'pinned' ? 'закреплен для изучения' : 'откреплен'}`, 'success');
                 
             } else {
                 const errorData = await response.json().catch(() => ({}));
                 console.error('Ошибка при переключении закрепления:', errorData);
-                alert('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'));
+                showNotification('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'), 'error');
             }
         } catch (error) {
             console.error('Сетевая ошибка при переключении закрепления:', error);
-            alert('Сетевая ошибка. Проверьте подключение к интернету.');
+            showNotification('Сетевая ошибка. Проверьте подключение к интернету.', 'error');
         }
     };
 
