@@ -144,467 +144,242 @@
 </div>
 {% endblock %}
 
-
 {% block scripts %}
 <script>
-    // ВАЖНО: Jinja2 вставляет сюда данные из Python!
-    const allData = {{ poems | tojson }};
-
-    const readPoemsTitles = new Set({{ read_poems | tojson | safe }});
-    let pinnedPoemTitle = {{ pinned_title | tojson | safe }};
+    // 1. Инициализация данных из FastAPI
     const isAuthenticated = {{ 'true' if current_user else 'false' }};
-    const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
-    const showAllTabSetting = {{ 'true' if current_user and current_user.show_all_tab else 'false' }};
+    let readPoemsTitles = new Set({{ read_poems | tojson | safe if read_poems else '[]' }});
+    let pinnedPoemTitle = "{{ pinned_title if pinned_title else '' }}";
+    const isAdmin = {{ 'true' if is_admin else 'false' }};
 
-    // --- 1. ЛОГИКА ФИЛЬТРАЦИИ И СОРТИРОВКИ ---
-    let allPoems = [];
-    let currentPoem = null;
-    let currentFilter = isAuthenticated ? 'unread' : 'unfiltered';
+    let currentFilter = 'unread'; 
     let currentSort = { type: 'title', order: 'asc' };
+    let poems = {{ poems | tojson | safe }};
 
-    const poemsContainer = document.getElementById('poems-container');
     const searchInput = document.getElementById('search-input');
-    const sortButtonsContainer = document.getElementById('sort-buttons-container');
-    const tabButtons = document.querySelectorAll('.tab');
-    const noResultsMessage = document.getElementById('no-results-message');
+    const poemGrid = document.getElementById('poem-grid');
     const modal = document.getElementById('poem-modal');
-    const closeModalBtn = document.getElementById('close-modal-btn');
-
-    // --- ФУНКЦИИ ---
-    const createPoemCard = (poem) => {
-        const isRead = readPoemsTitles.has(poem.title);
-        const isPinned = poem.title === pinnedPoemTitle;
-
-        const card = document.createElement('div');
-        let borderClass = 'border-gray-200';
-        if (isPinned) {
-            borderClass = 'border-orange-500 ring-2 ring-orange-200';
-        } else if (isRead) {
-            borderClass = 'border-sky-100';
-        }
-
-        card.className = `poem-card cursor-pointer p-6 bg-white rounded-xl shadow-lg border-2 ${borderClass} hover:border-sky-500`;
-        card.innerHTML = `
-            <h3 class="text-xl font-bold text-gray-900 mb-1 break-words">${poem.title}</h3>
-            <p class="text-sm text-gray-500 mb-3 italic">Автор: ${poem.author}</p>
-            <p class="text-sm text-gray-500">${poem.line_count} строк</p>
-            ${isAuthenticated ? `
-            <div class="flex flex-wrap gap-2 mt-2">
-                <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full ${isRead ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-700'}">
-                    ${isRead ? 'Прочитано' : 'Не прочитано'}
-                </span>
-                ${isPinned ? `
-                <span class="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-orange-500 text-white flex items-center">
-                    <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.5 4.5l-4.5 4.5l-4.5-4.5L15 10zM12 21V3" /></svg>
-                    Изучаю
-                </span>` : ''}
-            </div>
-            ` : ''}
-        `;
-        card.onclick = () => openModal(poem.title);
-        return card;
-    };
-
-    const filterAndRender = () => {
-        const searchText = searchInput.value.toLowerCase().trim();
-        let filteredPoems = allPoems.filter(poem => {
-            const matchesSearch = poem.title.toLowerCase().includes(searchText) ||
-                poem.author.toLowerCase().includes(searchText) ||
-                poem.text.toLowerCase().includes(searchText);
-            if (!matchesSearch) return false;
-            if (!isAuthenticated) return true;
-            const isRead = readPoemsTitles.has(poem.title);
-            if (currentFilter === 'unread') return !isRead;
-            if (currentFilter === 'read') return isRead;
-            return true;
-        });
-
-        let pinnedPoem = null;
-        let finalPoems = [];
-        if (isAuthenticated && pinnedPoemTitle) {
-            pinnedPoem = filteredPoems.find(p => p.title === pinnedPoemTitle);
-            if (pinnedPoem) {
-                filteredPoems = filteredPoems.filter(p => p.title !== pinnedPoemTitle);
-            }
-        }
-
-        filteredPoems.sort((a, b) => {
-            let valA, valB;
-            if (currentSort.type === 'length') {
-                valA = a.line_count;
-                valB = b.line_count;
-            } else if (currentSort.type === 'author') {
-                valA = a.author.toLowerCase();
-                valB = b.author.toLowerCase();
-            } else {
-                valA = a.title.toLowerCase();
-                valB = b.title.toLowerCase();
-            }
-            if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
-            if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
-            return 0;
-        });
-
-        if (pinnedPoem) finalPoems.push(pinnedPoem);
-        finalPoems.push(...filteredPoems);
-
-        poemsContainer.innerHTML = '';
-        if (finalPoems.length === 0) {
-            noResultsMessage.classList.remove('hidden');
-        } else {
-            noResultsMessage.classList.add('hidden');
-            finalPoems.forEach(poem => {
-                poemsContainer.appendChild(createPoemCard(poem));
-            });
-        }
-    };
-
-    const updateTabCounts = () => {
-        if (!isAuthenticated) {
-            document.getElementById('count-all').textContent = allPoems.length;
-            return;
-        }
-        const readCount = allPoems.filter(poem => readPoemsTitles.has(poem.title)).length;
-        const unreadCount = allPoems.length - readCount;
-        document.getElementById('count-all').textContent = allPoems.length;
-        document.getElementById('count-unread').textContent = unreadCount;
-        document.getElementById('count-read').textContent = readCount;
-    };
-
-    const openModal = (title) => {
-        currentPoem = allPoems.find(p => p.title === title);
-        if (!currentPoem) {
-            console.error('Стих не найден:', title);
-            return;
-        }
-
-        document.getElementById('modal-title').textContent = currentPoem.title;
-        document.getElementById('modal-author').textContent = `Автор: ${currentPoem.author}`;
-        document.getElementById('modal-text').textContent = currentPoem.text;
-
-        if (isAuthenticated) {
-            const isRead = readPoemsTitles.has(title);
-            const isPinned = title === pinnedPoemTitle;
-
-            updateModalReadButton(isRead);
-            updateModalPinButton(isPinned);
-
-            document.getElementById('read-button-wrapper').classList.remove('hidden');
-            document.getElementById('pin-button-wrapper').classList.remove('hidden');
-            document.getElementById('ai-button-wrapper').classList.remove('hidden');
-
-            // Устанавливаем обработчики через onclick (более надежно)
-            const readBtn = document.getElementById('toggle-read-btn');
-            const pinBtn = document.getElementById('toggle-pin-btn');
-            const aiBtn = document.getElementById('ai-btn');
-            
-            if (readBtn) {
-                readBtn.onclick = handleToggleRead;
-            }
-            if (pinBtn) {
-                pinBtn.onclick = handleTogglePin;
-            }
-            if (aiBtn) {
-                aiBtn.onclick = openAiModal;
-            }
-
-        } else {
-            document.getElementById('read-button-wrapper').classList.add('hidden');
-            document.getElementById('pin-button-wrapper').classList.add('hidden');
-            document.getElementById('ai-button-wrapper').classList.add('hidden');
-        }
-
-        modal.classList.add('open');
-    };
-
-    const closeModal = () => {
-        modal.classList.remove('open');
-        currentPoem = null;
-    };
-
-    let hasAiAccess = isAdmin; // Admins have access by default
     const aiModal = document.getElementById('ai-modal');
 
-    const openAiModal = () => {
-        aiModal.classList.add('open');
-        if (hasAiAccess) {
-            document.getElementById('ai-chat-interface').classList.remove('hidden');
-            document.getElementById('ai-key-entry').classList.add('hidden');
-        } else {
-            document.getElementById('ai-key-entry').classList.remove('hidden');
-            document.getElementById('ai-chat-interface').classList.add('hidden');
-        }
-    };
-
-    const closeAiModal = () => {
-        aiModal.classList.remove('open');
-    };
-
-    const handleAiKeySubmit = async (event) => {
-        event.preventDefault();
-        const key = document.getElementById('ai-key-input').value;
-        if (!key) return;
-
-        // This endpoint doesn't exist yet, so this will fail.
-        // I will create it in routers/ai.py
-        try {
-            const response = await fetch('/ai/verify_key', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: key })
-            });
-
-            if (response.ok) {
-                hasAiAccess = true;
-                openAiModal();
-                showNotification('Ключ принят! Доступ предоставлен.', 'success');
-            } else {
-                const error = await response.json();
-                showNotification(`Ошибка: ${error.detail}`, 'error');
-            }
-        } catch (err) {
-            showNotification('Сетевая ошибка.', 'error');
-        }
-    };
-
-    const handleAiChatSubmit = async (event) => {
-        event.preventDefault();
+    // --- ФУНКЦИЯ ЧАТА С AI (Markdown) ---
+    async function handleAiChatSubmit(e) {
+        e.preventDefault();
         const input = document.getElementById('ai-chat-input');
-        const prompt = input.value;
+        const prompt = input.value.trim();
         if (!prompt) return;
 
-        const chatHistory = document.getElementById('ai-chat-history');
-        const userMessage = document.createElement('div');
-        userMessage.className = 'text-right mb-2';
-        userMessage.innerHTML = `<span class="bg-sky-500 text-white rounded-lg px-3 py-1 inline-block">${prompt}</span>`;
-        chatHistory.appendChild(userMessage);
+        const chatContainer = document.getElementById('ai-chat-messages');
+
+        // Сообщение пользователя
+        const userDiv = document.createElement('div');
+        userDiv.className = "mb-4 text-right";
+        userDiv.innerHTML = `
+            <div class="inline-block bg-sky-500 text-white px-4 py-2 rounded-lg max-w-[85%] shadow-sm text-left">
+                ${prompt}
+            </div>
+        `;
+        chatContainer.appendChild(userDiv);
         input.value = '';
-        
+
+        // Индикатор загрузки
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = "mb-4 text-left";
+        loadingDiv.innerHTML = `
+            <div class="inline-block bg-gray-200 text-gray-600 px-4 py-2 rounded-lg animate-pulse">
+                Нейросеть думает...
+            </div>
+        `;
+        chatContainer.appendChild(loadingDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
         try {
-            const response = await fetch(`/ai/chat?prompt=${encodeURIComponent(prompt)}`, { method: 'POST' });
-            if (response.ok) {
-                const data = await response.json();
-                const aiMessage = document.createElement('div');
-                aiMessage.className = 'text-left mb-2';
-                aiMessage.innerHTML = `<span class="bg-gray-200 text-gray-800 rounded-lg px-3 py-1 inline-block">${data.response}</span>`;
-                chatHistory.appendChild(aiMessage);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
-            } else {
-                 showNotification('Ошибка ответа от AI.', 'error');
-            }
-        } catch (err) {
-            showNotification('Сетевая ошибка.', 'error');
-        }
-    };
-
-    const updateModalReadButton = (isRead) => {
-        const toggleReadBtn = document.getElementById('toggle-read-btn');
-        const readStatusText = document.getElementById('read-status-text');
-        if (!toggleReadBtn) return;
-
-        if (isRead) {
-            toggleReadBtn.classList.remove('bg-gray-100', 'text-gray-700');
-            toggleReadBtn.classList.add('bg-sky-500', 'text-white');
-            readStatusText.textContent = 'Прочитано';
-        } else {
-            toggleReadBtn.classList.remove('bg-sky-500', 'text-white');
-            toggleReadBtn.classList.add('bg-gray-100', 'text-gray-700');
-            readStatusText.textContent = 'Отметить как прочитанное';
-        }
-    };
-
-    const updateModalPinButton = (isPinned) => {
-        const togglePinBtn = document.getElementById('toggle-pin-btn');
-        const pinStatusText = document.getElementById('pin-status-text');
-        if (!togglePinBtn) return;
-
-        if (isPinned) {
-            togglePinBtn.classList.remove('bg-gray-100', 'text-gray-700');
-            togglePinBtn.classList.add('bg-orange-500', 'text-white');
-            pinStatusText.textContent = 'Изучаемый стих';
-        } else {
-            togglePinBtn.classList.remove('bg-orange-500', 'text-white');
-            togglePinBtn.classList.add('bg-gray-100', 'text-gray-700');
-            pinStatusText.textContent = 'Закрепить для изучения';
-        }
-    };
-
-    const handleToggleRead = async () => {
-        if (!currentPoem) return;
-
-        const url = `/toggle_read`;
-        console.log('Toggle read URL:', url, 'Title:', currentPoem.title);
-        
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ title: currentPoem.title })
+            // В твоем роутере ai.py используется query-параметр prompt
+            const response = await fetch(`/ai/chat?prompt=${encodeURIComponent(prompt)}`, {
+                method: 'POST'
             });
+            const data = await response.json();
+            loadingDiv.remove();
 
-            console.log('Response status:', response.status);
+            const aiDiv = document.createElement('div');
+            aiDiv.className = "mb-4 text-left";
             
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Response data:', data);
-                
-                if (data.action === 'marked') {
-                    readPoemsTitles.add(currentPoem.title);
-                } else {
-                    readPoemsTitles.delete(currentPoem.title);
-                }
-                
-                updateModalReadButton(readPoemsTitles.has(currentPoem.title));
-                updateTabCounts();
-                filterAndRender();
-                
-                // Показываем сообщение об успехе
-                showNotification(`Стих "${currentPoem.title}" ${data.action === 'marked' ? 'отмечен как прочитанный' : 'удален из прочитанных'}`, 'success');
-                
-            } else {
-                const errorData = await response.json().catch(() => ({}));
-                console.error('Ошибка при переключении статуса прочтения:', errorData);
-                showNotification('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'), 'error');
-            }
-        } catch (error) {
-            showNotification('Сетевая ошибка. Проверьте подключение к интернету.', 'error');
-        }
-    };
+            // Превращаем Markdown в красивый HTML
+            const rawContent = data.response || data.detail || "Ошибка получения ответа";
+            const renderedContent = marked.parse(rawContent);
 
-    const handleTogglePin = async () => {
-        if (!currentPoem) return;
-
-        const url = `/toggle_pin`;
-        console.log('Toggle pin URL:', url, 'Title:', currentPoem.title);
-        
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ title: currentPoem.title })
-            });
-
-            console.log('Response status:', response.status);
+            aiDiv.innerHTML = `
+                <div class="ai-response-content inline-block bg-white border border-gray-200 text-gray-800 px-4 py-2 rounded-lg max-w-[95%] shadow-md">
+                    ${renderedContent}
+                </div>
+            `;
             
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Response data:', data);
-                
-                pinnedPoemTitle = data.pinned_title;
-                updateModalPinButton(currentPoem.title === pinnedPoemTitle);
-                updateTabCounts();
-                filterAndRender();
-                
-                // Показываем сообщение об успехе
-                showNotification(`Стих "${currentPoem.title}" ${data.action === 'pinned' ? 'закреплен для изучения' : 'откреплен'}`, 'success');
-                
-            } else {
-                const errorData = await response.json().catch(() => ({}));
-                console.error('Ошибка при переключении закрепления:', errorData);
-                showNotification('Ошибка: ' + (errorData.detail || 'Не удалось обновить статус'), 'error');
-            }
+            chatContainer.appendChild(aiDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
         } catch (error) {
-            console.error('Сетевая ошибка при переключении закрепления:', error);
-            showNotification('Сетевая ошибка. Проверьте подключение к интернету.', 'error');
+            if (loadingDiv) loadingDiv.remove();
+            showNotification("Ошибка связи с сервером", "error");
         }
-    };
+    }
 
-    // --- ОБРАБОТЧИКИ СОБЫТИЙ ---
-    window.onload = () => {
-        allPoems = allData;
+    // --- ЛОГИКА ФИЛЬТРАЦИИ И КАРТОЧЕК ---
+    function filterAndRender() {
+        const query = searchInput.value.toLowerCase();
+        let filtered = poems.filter(p => 
+            p.title.toLowerCase().includes(query) || 
+            p.author.toLowerCase().includes(query) || 
+            p.text.toLowerCase().includes(query)
+        );
 
-        // Настройка иконок сортировки
-        const allIcons = document.querySelectorAll('.sort-arrow-icon');
-        allIcons.forEach(icon => {
-            if (icon.dataset.sortIcon === currentSort.type) {
-                icon.style.opacity = 1;
-                icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
-            } else {
-                icon.style.opacity = 0;
+        if (isAuthenticated) {
+            if (currentFilter === 'read') {
+                filtered = filtered.filter(p => readPoemsTitles.has(p.title));
+            } else if (currentFilter === 'unread') {
+                filtered = filtered.filter(p => !readPoemsTitles.has(p.title));
             }
+        }
+
+        filtered.sort((a, b) => {
+            let valA = a[currentSort.type];
+            let valB = b[currentSort.type];
+            if (currentSort.order === 'desc') [valA, valB] = [valB, valA];
+            return valA.toString().localeCompare(valB.toString(), undefined, {numeric: true});
         });
 
-        updateTabCounts();
-        filterAndRender();
+        renderPoems(filtered);
+        updateCounts();
+    }
 
-        // Обработчики вкладок
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const currentActive = document.querySelector('.tab.active');
-                if (currentActive) currentActive.classList.remove('active');
-                button.classList.add('active');
-                currentFilter = button.dataset.filter;
-                filterAndRender();
-            });
+    function renderPoems(list) {
+        poemGrid.innerHTML = '';
+        list.forEach(poem => {
+            const isRead = readPoemsTitles.has(poem.title);
+            const isPinned = pinnedPoemTitle === poem.title;
+            
+            const card = document.createElement('div');
+            card.className = `poem-card bg-white p-6 rounded-xl shadow-md border-t-4 transition-all hover:shadow-lg cursor-pointer flex flex-col justify-between ${isRead ? 'border-green-400 opacity-75' : 'border-sky-400'}`;
+            card.innerHTML = `
+                <div>
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="text-xl font-bold text-gray-800">${poem.title}</h3>
+                        ${isPinned ? '<span class="text-yellow-500 text-xl">📌</span>' : ''}
+                    </div>
+                    <p class="text-gray-600 italic mb-4">${poem.author}</p>
+                </div>
+                <div class="text-sm text-gray-400 flex justify-between items-center mt-4">
+                    <span>${poem.line_count} строк</span>
+                    ${isRead ? '<span class="text-green-600 font-semibold">Прочитано</span>' : ''}
+                </div>
+            `;
+            card.onclick = () => openModal(poem);
+            poemGrid.appendChild(card);
         });
+    }
 
-        // Закрытие модального окна
-        closeModalBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (event) => {
-            if (event.target === modal) closeModal();
+    function updateCounts() {
+        if (!isAuthenticated) return;
+        const countAll = document.getElementById('count-all');
+        const countRead = document.getElementById('count-read');
+        const countUnread = document.getElementById('count-unread');
+        
+        if(countAll) countAll.textContent = poems.length;
+        if(countRead) countRead.textContent = readPoemsTitles.size;
+        if(countUnread) countUnread.textContent = poems.length - readPoemsTitles.size;
+    }
+
+    // --- МОДАЛЬНЫЕ ОКНА ---
+    function openModal(poem) {
+        document.getElementById('modal-title').textContent = poem.title;
+        document.getElementById('modal-author').textContent = poem.author;
+        document.getElementById('modal-text').textContent = poem.text;
+        
+        if (isAuthenticated) {
+            const readBtn = document.getElementById('toggle-read-btn');
+            const pinBtn = document.getElementById('toggle-pin-btn');
+            
+            readBtn.textContent = readPoemsTitles.has(poem.title) ? "Не прочитано" : "Прочитано";
+            pinBtn.textContent = pinnedPoemTitle === poem.title ? "Открепить" : "Закрепить";
+            
+            readBtn.onclick = () => toggleRead(poem.title);
+            pinBtn.onclick = () => togglePin(poem.title);
+        }
+        modal.classList.add('open');
+    }
+
+    function closeModal() { modal.classList.remove('open'); }
+    function openAiModal() { aiModal.classList.add('open'); }
+    function closeAiModal() { aiModal.classList.remove('open'); }
+
+    // --- API ВЗАИМОДЕЙСТВИЕ ---
+    async function toggleRead(title) {
+        const resp = await fetch('/toggle_read', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({title})
         });
-
-        // Поиск
-        searchInput.addEventListener('input', filterAndRender);
-
-        // Сортировка
-        sortButtonsContainer.addEventListener('click', (e) => {
-            const targetButton = e.target.closest('button.sort-btn');
-            if (!targetButton) return;
-
-            const newSortType = targetButton.dataset.sort;
-            if (newSortType === currentSort.type) {
-                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
-            } else {
-                currentSort.type = newSortType;
-                currentSort.order = 'asc';
-            }
-
-            targetButton.dataset.order = currentSort.order;
-            const activeSort = sortButtonsContainer.querySelector('.active');
-            if (activeSort) activeSort.classList.remove('active');
-            targetButton.classList.add('active');
-
-            const allIcons = document.querySelectorAll('.sort-arrow-icon');
-            allIcons.forEach(icon => {
-                if (icon.dataset.sortIcon === currentSort.type) {
-                    icon.style.opacity = 1;
-                    icon.style.transform = currentSort.order === 'desc' ? 'rotate(180deg)' : 'rotate(0deg)';
-                } else {
-                    icon.style.opacity = 0;
-                }
-            });
-
+        const data = await resp.json();
+        if (data.success) {
+            if (data.action === 'marked') readPoemsTitles.add(title);
+            else readPoemsTitles.delete(title);
             filterAndRender();
-        });
+            closeModal();
+        }
+    }
 
-        // Escape для закрытия модального окна
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && modal.classList.contains('open')) {
-                closeModal();
-            }
-            if (event.key === 'Escape' && aiModal.classList.contains('open')) {
-                closeAiModal();
-            }
+    async function togglePin(title) {
+        const resp = await fetch('/toggle_pin', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({title})
         });
+        const data = await resp.json();
+        if (data.success) {
+            pinnedPoemTitle = data.action === 'pinned' ? title : '';
+            filterAndRender();
+            closeModal();
+        }
+    }
 
-        document.getElementById('close-ai-modal-btn').addEventListener('click', closeAiModal);
-        aiModal.addEventListener('click', (event) => {
-            if (event.target === aiModal) closeAiModal();
+    async function handleAiKeySubmit(e) {
+        e.preventDefault();
+        const key = document.getElementById('ai-key-input').value;
+        const resp = await fetch('/ai/verify_key', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key})
         });
-        document.getElementById('ai-key-form').addEventListener('submit', handleAiKeySubmit);
-        document.getElementById('ai-chat-form').addEventListener('submit', handleAiChatSubmit);
+        if (resp.ok) {
+            location.reload();
+        } else {
+            showNotification("Неверный ключ", "error");
+        }
+    }
+
+    // --- ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ ---
+    window.onload = () => {
+        filterAndRender();
         
-        console.log('Script loaded successfully');
-        console.log('Is authenticated:', isAuthenticated);
-        console.log('Read poems:', Array.from(readPoemsTitles));
-        console.log('Pinned poem:', pinnedPoemTitle);
+        if(searchInput) searchInput.addEventListener('input', filterAndRender);
+        
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.onclick = () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active', 'bg-sky-500', 'text-white'));
+                tab.classList.add('active', 'bg-sky-500', 'text-white');
+                currentFilter = tab.dataset.filter;
+                filterAndRender();
+            };
+        });
+
+        const chatForm = document.getElementById('ai-chat-form');
+        if(chatForm) chatForm.addEventListener('submit', handleAiChatSubmit);
+        
+        const keyForm = document.getElementById('ai-key-form');
+        if(keyForm) keyForm.addEventListener('submit', handleAiKeySubmit);
+        
+        document.getElementById('close-ai-modal-btn')?.addEventListener('click', closeAiModal);
     };
 </script>
 {% endblock %}
+
+                
+                                                
