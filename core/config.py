@@ -10,6 +10,10 @@ class Settings:
 
     # Gemini
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
     
     # JWT
     SECRET_KEY = os.getenv("SECRET_KEY", "sUper_sEcrEt_kEy_fOr_pRojeCt_2024_fAstApi")

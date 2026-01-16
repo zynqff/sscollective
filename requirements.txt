@@ -11,3 +11,5 @@ gunicorn
 supabase
 python-dotenv
 google-generativeai
+Authlib
+httpx
